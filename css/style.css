@@ -1254,3 +1254,113 @@ html, body {
     height: 130px;
   }
 }
+
+/* ======================================================================
+   MOBILE / TOUCH FRIENDLY LAYER
+   ====================================================================== */
+html, body, #app { touch-action: none; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+#app { height: 100dvh; width: 100vw; }
+#screen-select, #modal-how .modal-box, #modal-result .modal-box { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+.modal-box { max-height: 92dvh; overflow-y: auto; }
+
+/* Touch pad only for touch devices (hidden with mouse/keyboard) */
+body:not(.is-touch) .touch-row { display: none; }
+body:not(.is-touch) .rotate-hint { display: none !important; }
+
+.rotate-hint {
+  display: none;
+  align-self: center;
+  margin-top: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(246, 196, 69, 0.95);
+  color: #161006;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+body.is-touch .controls-bar { display: none; }
+body.is-touch .t-btn {
+  width: clamp(58px, 11vw, 84px);
+  height: clamp(58px, 11vw, 84px);
+  font-size: 12px;
+  border-radius: 16px;
+  background: rgba(15, 14, 28, 0.62);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.is-touch .t-btn.active { transform: scale(0.94); }
+body.is-touch .touch-cluster { gap: 10px; }
+body.is-touch .hud-bottom { padding: 0 max(14px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-right)); }
+body.is-touch .hud-top { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+body.is-touch .btn-primary, body.is-touch .btn-secondary, body.is-touch .seg-group button, body.is-touch .roster-card { min-height: 44px; }
+body.is-touch .hud-mini-btns button { padding: 8px 14px; font-size: 12px; min-height: 40px; }
+body.is-touch .top-utility { top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); }
+body.is-touch .icon-btn, body.is-touch .mode-switch button { min-height: 38px; }
+
+/* Fullscreen button */
+#btn-fullscreen { display: none; }
+body.is-touch #btn-fullscreen { display: inline-block; }
+
+/* Tablets / phones */
+@media (max-width: 900px) {
+  .title-card { padding: 22px 18px; }
+  .title-controls-mini { display: none; }
+  .select-header { padding-right: 0; padding-top: 44px; }
+  .select-title { font-size: 22px; }
+  #screen-select { padding: 10px 12px; }
+  .bar-shell { height: 16px; }
+  .hud-name-row { font-size: 11px; }
+  .hud-center { min-width: 100px; padding: 4px 10px; }
+  .hud-clock { font-size: 24px; }
+  .mom-ready-pill { font-size: 9px; padding: 2px 6px; }
+  .modal-title { font-size: 28px; }
+  .modal-box { padding: 16px 16px; }
+  #hud-combo-meter { min-width: 0; width: min(92vw, 380px); padding: 8px 12px 10px; top: 26%; }
+  .cm-track { width: 100%; }
+  .cm-sig-name { font-size: 18px; }
+  #hud-count { min-width: 0; width: min(90vw, 340px); padding: 12px 16px; }
+  .count-num { font-size: 54px; }
+  .rise-track { width: 100%; }
+  .debug-overlay { display: none !important; }
+}
+
+/* Phone landscape: keep the ring visible, controls tucked in the corners */
+@media (max-height: 520px) {
+  .hud-top { padding: 6px 12px; gap: 8px; }
+  .hud-name-row { font-size: 10px; }
+  .bar-shell { height: 12px; }
+  .stamina-shell { height: 6px; }
+  .momentum-shell { height: 11px; }
+  .kd-badge { font-size: 9px; padding: 1px 6px; }
+  .combo-pill { display: none; }
+  .hud-center { padding: 2px 10px; }
+  .hud-clock { font-size: 20px; }
+  .hud-round { font-size: 9px; }
+  #hud-banner { font-size: clamp(26px, 8vh, 48px); top: 36%; }
+  #hud-combo-meter { top: 30%; padding: 6px 12px 8px; }
+  .cm-pips, .cm-prompt { display: none; }
+  #hud-count { top: 48%; padding: 8px 16px; }
+  .count-num { font-size: 40px; }
+  .count-hint, .count-diff { font-size: 10px; }
+  #hud-rest { padding: 10px 18px; }
+  body.is-touch .t-btn { width: clamp(52px, 13vh, 70px); height: clamp(52px, 13vh, 70px); }
+  .title-card { padding: 14px 20px; }
+  .title-logo { font-size: 44px; }
+  .title-sub, .title-eyebrow { display: none; }
+  .title-actions { margin-top: 12px; }
+}
+
+/* Portrait phone: show a friendly (non-blocking) rotate hint */
+@media (orientation: portrait) and (max-width: 700px) {
+  body.is-touch .rotate-hint { display: inline-block; }
+  body.is-touch .t-btn { width: clamp(50px, 15vw, 66px); height: clamp(50px, 15vw, 66px); font-size: 10px; }
+  body.is-touch .touch-cluster { gap: 6px; flex-wrap: wrap; justify-content: center; }
+  body.is-touch .touch-row { align-items: flex-end; gap: 6px; }
+  .hud-top { grid-template-columns: 1fr 1fr; }
+  .hud-center { grid-column: 1 / -1; grid-row: 1; justify-self: center; }
+  .momentum-row, .stamina-shell { width: 100%; }
+}

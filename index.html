@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#07060d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>IRON FISTS — Championship Boxing</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -17,6 +21,7 @@
         <button id="btn-mode-2d" class="active" data-renderer="2d">2D RING</button>
         <button id="btn-mode-3d" data-renderer="3d" disabled>3D <span class="soon-tag">Coming Soon</span></button>
       </div>
+      <button id="btn-fullscreen" class="icon-btn" title="Fullscreen">⛶</button>
       <button id="btn-sound" class="icon-btn" title="Toggle Sound">🔊 SFX</button>
     </div>
 
@@ -180,6 +185,8 @@
           <div id="hud-combo-1" class="combo-pill"></div>
         </div>
       </div>
+
+      <div class="rotate-hint">📱 Rotate your phone sideways for the best view</div>
 
       <!-- Callout Banner -->
       <div id="hud-banner">FIGHT!</div>

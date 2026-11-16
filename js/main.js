@@ -1044,6 +1044,35 @@
   }
 
   function initUI() {
+    // Touch device detection -> enables the on-screen touch pad and mobile layout
+    var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)');
+    function applyTouchClass() {
+      var isTouch = (coarse && coarse.matches) || (navigator.maxTouchPoints > 0 && window.innerWidth < 1100);
+      document.body.classList.toggle('is-touch', !!isTouch);
+      if (app.renderer) app.renderer.resize();
+    }
+    applyTouchClass();
+    if (coarse && coarse.addEventListener) coarse.addEventListener('change', applyTouchClass);
+    window.addEventListener('orientationchange', function () {
+      Input.reset();
+      setTimeout(function () { if (app.renderer) app.renderer.resize(); }, 250);
+    });
+    var fsBtn = $('btn-fullscreen');
+    if (fsBtn) {
+      fsBtn.addEventListener('click', function () {
+        var el = document.documentElement;
+        if (document.fullscreenElement) {
+          if (document.exitFullscreen) document.exitFullscreen();
+        } else if (el.requestFullscreen) {
+          el.requestFullscreen().then(function () {
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
+          }).catch(function () {});
+        } else {
+          fsBtn.style.display = 'none';
+        }
+      });
+    }
+
     sync3DButtonAvailability();
     switchRenderer('2d');
     window.addEventListener('resize', function () {
