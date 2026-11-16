@@ -1384,3 +1384,41 @@ body.is-touch #btn-fullscreen { display: inline-block; }
   .select-header { padding-top: 48px; }
 }
 
+
+/* ===== Mobile title / select screens ===== */
+@media (max-width: 700px) {
+  #screen-title { justify-content: flex-end; padding: 0 14px calc(24px + env(safe-area-inset-bottom)); }
+  .title-card { width: 100%; max-width: 420px; padding: 18px 16px 20px; border-radius: 18px; }
+  .title-eyebrow { font-size: 10px; letter-spacing: 0.14em; padding: 3px 10px; margin-bottom: 8px; }
+  .title-logo { font-size: clamp(46px, 15vw, 64px); }
+  .title-sub { display: none; }
+  .title-actions { flex-direction: column; gap: 12px; margin-top: 16px; }
+  .title-actions button { width: 100%; min-height: 54px; font-size: 17px; padding: 12px 16px; }
+  .select-footer { position: sticky; bottom: 0; z-index: 5; background: rgba(7, 6, 14, 0.94); margin: 0 -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,0.12); }
+  .select-footer .btn-primary { flex: 1; margin-left: 10px; padding: 12px 10px; font-size: 16px; }
+  .fp-bio { display: none; }
+  .select-grid { gap: 8px; }
+  .vs-pillar { gap: 10px; }
+  .vs-badge { font-size: 28px; }
+}
+@media (orientation: portrait) and (max-width: 820px) {
+  /* keep the attract-mode boxers visible above the title card */
+  body.is-touch:not(.in-fight) #stage { bottom: 330px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  #screen-select { padding: 8px 12px; }
+  .select-grid { grid-template-columns: 1fr auto 1fr; gap: 8px; }
+  .preview-wrap { height: 104px; }
+  .fp-top { grid-template-columns: 90px 1fr; gap: 8px; }
+  .fp-name { font-size: 18px; }
+  .fp-bio, .fp-nick { display: none; }
+  .stats-list { gap: 3px 10px; margin-top: 4px; }
+  .roster-strip { margin-top: 6px; }
+  .roster-card { padding: 4px; }
+  .rc-dot { width: 16px; height: 16px; }
+  .select-header { padding-top: 0; padding-right: 150px; }
+  .select-title { font-size: 18px; }
+  .vs-badge { font-size: 26px; }
+  .select-footer { position: sticky; bottom: 0; background: rgba(7,6,14,0.94); padding: 6px 0; z-index: 5; }
+}
+

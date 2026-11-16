@@ -1017,6 +1017,7 @@
     var allPass = results.every(function (r) { return r.pass; });
     console.log('SELF-TEST SUMMARY: ' + (allPass ? 'ALL ' + results.length + ' PASSED' : 'FAILURES DETECTED'));
     showScreen('title');
+    if (window.location && window.location.search && window.location.search.indexOf('screen=select') >= 0) showScreen('select');
 
     var panel = $('selftest-panel');
     if (panel) {
@@ -1167,6 +1168,7 @@
     $('btn-res-title').addEventListener('click', function () { showScreen('title'); });
 
     showScreen('title');
+    if (window.location && window.location.search && window.location.search.indexOf('screen=select') >= 0) showScreen('select');
     if (window.location && window.location.search && window.location.search.indexOf('selftest=1') >= 0) {
       runSelfTest();
     }
