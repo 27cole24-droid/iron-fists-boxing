@@ -1,4 +1,4 @@
-/* style.css - Iron Fists Championship Boxing UI & HUD */
+﻿/* style.css - Iron Fists Championship Boxing UI & HUD */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -1354,13 +1354,33 @@ body.is-touch #btn-fullscreen { display: inline-block; }
   .title-actions { margin-top: 12px; }
 }
 
-/* Portrait phone: show a friendly (non-blocking) rotate hint */
-@media (orientation: portrait) and (max-width: 700px) {
-  body.is-touch .rotate-hint { display: inline-block; }
-  body.is-touch .t-btn { width: clamp(50px, 15vw, 66px); height: clamp(50px, 15vw, 66px); font-size: 10px; }
-  body.is-touch .touch-cluster { gap: 6px; flex-wrap: wrap; justify-content: center; }
-  body.is-touch .touch-row { align-items: flex-end; gap: 6px; }
-  .hud-top { grid-template-columns: 1fr 1fr; }
-  .hud-center { grid-column: 1 / -1; grid-row: 1; justify-self: center; }
-  .momentum-row, .stamina-shell { width: 100%; }
+/* ===== Portrait phone: fully playable vertically =====
+   Ring on top, a dedicated control panel at the bottom (never covers the fighters). */
+@media (orientation: portrait) and (max-width: 820px) {
+  body.is-touch.in-fight #stage { bottom: calc(190px + env(safe-area-inset-bottom)); }
+  body.is-touch .hud-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    min-height: calc(190px + env(safe-area-inset-bottom));
+    padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(10,9,20,0.96), #07060d);
+    border-top: 2px solid rgba(246, 196, 69, 0.45);
+    justify-content: center;
+  }
+  body.is-touch .touch-row { flex-direction: column-reverse; align-items: center; gap: 10px; }
+  body.is-touch .touch-cluster { gap: 8px; flex-wrap: nowrap; justify-content: center; width: 100%; }
+  body.is-touch .t-btn { width: min(21.5vw, 88px); height: min(21.5vw, 76px); font-size: 11px; }
+  .hud-top { grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 8px 10px; }
+  .hud-center { grid-column: 1 / -1; grid-row: 1; justify-self: center; display: flex; gap: 10px; align-items: center; padding: 2px 12px; min-width: 0; }
+  .hud-center .hud-mini-btns { margin-top: 0; }
+  .hud-name-row { font-size: 10px; gap: 4px; flex-wrap: wrap; }
+  .hud-name-row .flag-swatch { width: 16px; height: 10px; }
+  .momentum-row, .stamina-shell, .bar-shell { width: 100%; max-width: none; }
+  .mom-ready-pill { display: none; }
+  .combo-pill { display: none; }
+  #hud-banner { top: 30%; }
+  #hud-combo-meter { top: 27%; }
+  #hud-count { top: 36%; }
+  #hud-rest { top: 36%; }
+  .select-header { padding-top: 48px; }
 }
+

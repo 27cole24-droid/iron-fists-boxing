@@ -359,7 +359,8 @@
 
     // camera
     var dist = Math.abs(x[1] - x[0]), mid = (x[0] + x[1]) / 2;
-    var targetView = clamp(dist + 3.6, 5.6, 8.6);
+    var portrait = H > W * 1.05;   // tall/narrow screens (phones held vertically): zoom in so boxers stay big
+    var targetView = portrait ? clamp(dist + 2.5, 3.9, 8.6) : clamp(dist + 3.6, 5.6, 8.6);
     if (state.slowmo > 0 || state.comboState) targetView *= 0.78;
     if (!this.camInit) { this.cam.x = mid * 0.85; this.cam.view = targetView; this.camInit = true; }
     var k = 1 - Math.exp(-realDt * 5);

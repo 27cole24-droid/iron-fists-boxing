@@ -85,6 +85,8 @@
     Input.reset();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     app.screen = name;
+    document.body.classList.toggle('in-fight', name === 'fight');
+    if (app.renderer) app.renderer.resize();
     $('screen-title').classList.toggle('active', name === 'title');
     $('screen-select').classList.toggle('active', name === 'select');
     $('screen-hud').classList.toggle('active', name === 'fight');
