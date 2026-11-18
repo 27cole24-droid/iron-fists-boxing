@@ -17,6 +17,7 @@
 
     <!-- Persistent Display Mode & Audio Bar -->
     <div class="top-utility">
+      <div id="net-ping-badge" class="net-ping-badge" style="display:none;">🟢 ONLINE</div>
       <div class="mode-switch" title="Switch Renderer">
         <button id="btn-mode-2d" class="active" data-renderer="2d">2D RING</button>
         <button id="btn-mode-3d" data-renderer="3d" disabled>3D <span class="soon-tag">Coming Soon</span></button>
@@ -51,7 +52,8 @@
         <div class="match-options">
           <div class="seg-group" id="seg-vs">
             <button data-vs="cpu" class="active">VS CPU</button>
-            <button data-vs="2p">LOCAL 2 PLAYER</button>
+            <button data-vs="2p">LOCAL 2P</button>
+            <button data-vs="online">🌐 ONLINE</button>
           </div>
           <div class="seg-group" id="seg-diff">
             <button data-diff="easy" class="active">EASY</button>
@@ -61,13 +63,35 @@
         </div>
       </header>
 
+      <!-- Online Multiplayer Matchmaking Bar (shown when 🌐 ONLINE is selected) -->
+      <div id="online-panel" class="online-panel interactive" style="display:none;">
+        <div class="online-actions" id="online-actions-row">
+          <button id="btn-net-quick" class="btn-net-primary">⚡ FIND OPPONENT</button>
+          <button id="btn-net-host" class="btn-net-sec">🏠 HOST ROOM</button>
+          <div class="net-join-group">
+            <input id="inp-net-code" type="text" maxlength="6" placeholder="ROOM CODE" autocomplete="off" />
+            <button id="btn-net-join" class="btn-net-sec">JOIN</button>
+          </div>
+        </div>
+        <div class="online-status-row">
+          <span id="net-status-dot" class="net-dot"></span>
+          <span id="net-status-text" class="net-status-text">Choose Quick Match, Host a Room Code, or enter a Friend's Code.</span>
+          <div id="net-code-box" class="net-code-box" style="display:none;">
+            <span>CODE: <strong id="net-code-val">----</strong></span>
+            <button id="btn-net-copy-code" class="btn-net-mini" title="Copy Room Code">📋 CODE</button>
+            <button id="btn-net-copy-link" class="btn-net-mini" title="Copy Invite Link">🔗 INVITE LINK</button>
+          </div>
+          <button id="btn-net-leave" class="btn-net-mini danger" style="display:none;">✕ LEAVE</button>
+        </div>
+      </div>
+
       <div class="select-grid interactive">
         <!-- Player 1 Card -->
         <div class="fighter-panel p1">
           <div>
             <div class="fp-top">
               <div class="preview-wrap">
-                <span class="corner-tag">RED CORNER • P1</span>
+                <span id="p1-corner-tag" class="corner-tag">RED CORNER • P1</span>
                 <canvas id="preview-p1" width="220" height="240"></canvas>
               </div>
               <div class="fp-meta">
@@ -323,6 +347,7 @@
   <script src="js/render2d.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/input.js"></script>
+  <script src="js/net.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

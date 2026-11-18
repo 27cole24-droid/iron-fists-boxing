@@ -73,6 +73,8 @@
   function handleKeyDown(e) {
     var code = e.code;
     if (!code) return;
+    var tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
     if (code === 'Backquote' || code === 'F3') {
       e.preventDefault();

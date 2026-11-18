@@ -1,7 +1,7 @@
 /* main.js - UI screens, renderer switching, fixed-timestep accumulator loop, debug overlay, and self-test. */
 (function (g) {
   'use strict';
-  var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio;
+  var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio, Net = g.Net;
 
   var DIFF_KEY = 'ironFistsDifficulty';
   function loadDifficulty() {
@@ -15,7 +15,7 @@
 
   var app = {
     screen: 'title',          // 'title' | 'select' | 'fight'
-    vsMode: 'cpu',            // 'cpu' | '2p'
+    vsMode: 'cpu',            // 'cpu' | '2p' | 'online'
     difficulty: loadDifficulty(), // 'easy' (default) | 'normal' (Medium) | 'hard' -- remembered in localStorage
     renderMode: '2d',         // '2d' | '3d'
     selected: ['viper', 'hammer'],
@@ -35,6 +35,8 @@
     ],
     comboGrades: [],
     priorKOs: [0, 0],
+    onlineEventsQueue: [],
+    guestReady: false,
     accumulator: 0,
     lastFrameTime: 0,
     bannerTimer: 0,
@@ -139,16 +141,26 @@
   function buildRosterStrip(slot) {
     var wrap = $(slot === 0 ? 'p1-roster' : 'p2-roster');
     wrap.innerHTML = '';
+    var netConn = app.vsMode === 'online' && Net && Net.isConnected();
+    var netRole = netConn ? Net.getRole() : null;
+    var slotLocked = netConn && ((netRole === 'host' && slot === 1) || (netRole === 'guest' && slot === 0));
+
     Boxers.list.forEach(function (b) {
       var btn = document.createElement('button');
-      btn.className = 'roster-card' + (app.selected[slot] === b.id ? ' selected' : '');
+      btn.className = 'roster-card' +
+        (app.selected[slot] === b.id ? ' selected' : '') +
+        (slotLocked ? ' locked' : '');
       btn.innerHTML =
         '<div class="rc-dot" style="background:' + b.look.glove + ';border-color:' + b.look.trunks + '"></div>' +
         '<div class="rc-name">' + b.nick.replace('The ', '') + '</div>' +
         '<div class="rc-style">' + b.style.split(' ').slice(-1)[0] + '</div>';
       btn.addEventListener('click', function () {
+        if (slotLocked) return;
         if (Audio) Audio.resume();
         app.selected[slot] = b.id;
+        if (netConn) {
+          Net.send({ t: 'sel', slot: slot, boxer: b.id });
+        }
         renderSelectScreen();
         btn.blur();
       });
@@ -178,8 +190,47 @@
   }
 
   function renderSelectScreen() {
-    $('p2-corner-tag').textContent = app.vsMode === '2p' ? 'BLUE CORNER • P2' : 'BLUE CORNER • CPU';
+    var isOnline = app.vsMode === 'online';
+    var netConn = isOnline && Net && Net.isConnected();
+    var netRole = netConn ? Net.getRole() : null;
+
+    var p1Tag = $('p1-corner-tag');
+    if (p1Tag) {
+      p1Tag.textContent = isOnline
+        ? (netConn ? (netRole === 'host' ? 'RED CORNER • YOU (HOST)' : 'RED CORNER • HOST') : 'RED CORNER • HOST (P1)')
+        : 'RED CORNER • P1';
+    }
+    $('p2-corner-tag').textContent = isOnline
+      ? (netConn ? (netRole === 'guest' ? 'BLUE CORNER • YOU (GUEST)' : 'BLUE CORNER • OPPONENT') : 'BLUE CORNER • GUEST (P2)')
+      : (app.vsMode === '2p' ? 'BLUE CORNER • P2' : 'BLUE CORNER • CPU');
+
     $('seg-diff').style.display = app.vsMode === 'cpu' ? 'inline-flex' : 'none';
+    var onlinePanel = $('online-panel');
+    if (onlinePanel) onlinePanel.style.display = isOnline ? 'flex' : 'none';
+
+    var startBtn = $('btn-start-fight');
+    if (startBtn) {
+      if (isOnline) {
+        if (!netConn) {
+          startBtn.textContent = 'CONNECT ONLINE ABOVE FIRST';
+          startBtn.disabled = true;
+          startBtn.style.opacity = '0.5';
+        } else if (netRole === 'guest') {
+          startBtn.textContent = app.guestReady ? '✓ READY! WAITING FOR HOST...' : 'TAP WHEN READY 🔔';
+          startBtn.disabled = false;
+          startBtn.style.opacity = app.guestReady ? '0.8' : '1';
+        } else {
+          startBtn.textContent = (app.guestReady ? 'OPPONENT READY — START FIGHT 🔔' : 'START ONLINE FIGHT 🔔');
+          startBtn.disabled = false;
+          startBtn.style.opacity = '1';
+        }
+      } else {
+        startBtn.textContent = 'START FIGHT 🔔';
+        startBtn.disabled = false;
+        startBtn.style.opacity = '1';
+      }
+    }
+
     buildRosterStrip(0);
     buildRosterStrip(1);
     fillFighterPanel(0);
@@ -187,11 +238,38 @@
   }
 
   // ------------------------------------------------------------------ Start / Manage Real Fight
-  function startMatch() {
+  function startMatch(onlinePayload) {
+    if (app.vsMode === 'online') {
+      if (!Net || !Net.isConnected()) return;
+      if (Net.getRole() === 'guest' && (!onlinePayload || !onlinePayload.fromHost)) {
+        app.guestReady = !app.guestReady;
+        Net.send({ t: 'ready', ready: app.guestReady });
+        renderSelectScreen();
+        return;
+      }
+    }
+
     if (Audio) Audio.resume();
     Input.setTwoPlayer(app.vsMode === '2p');
     Input.reset();
-    app.seedCounter = (app.seedCounter + 37) | 0;
+
+    if (onlinePayload && onlinePayload.fromHost) {
+      app.selected = onlinePayload.boxers || app.selected;
+      app.seedCounter = onlinePayload.seed || 138;
+      app.priorKOs = onlinePayload.priorKOs || [0, 0];
+    } else {
+      app.seedCounter = (app.seedCounter + 37) | 0;
+      if (app.vsMode === 'online' && Net && Net.isConnected() && Net.getRole() === 'host') {
+        Net.send({
+          t: 'start',
+          fromHost: true,
+          boxers: app.selected,
+          seed: app.seedCounter,
+          priorKOs: app.priorKOs
+        });
+      }
+    }
+
     var b0 = app.selected[0], b1 = app.selected[1];
     app.simState = Sim.create({ boxers: [b0, b1], seed: app.seedCounter, priorKOs: app.priorKOs, vsCpu: app.vsMode === 'cpu', difficulty: app.difficulty });
     app.prevSimState = app.simState;
@@ -201,6 +279,8 @@
       : null;
     app.lastStepInputs = [copyInput({}), copyInput({})];
     app.comboGrades = [];
+    app.onlineEventsQueue = [];
+    app.guestReady = false;
     app.accumulator = 0;
     app.paused = false;
     app.resultShown = false;
@@ -208,9 +288,15 @@
 
     var B0 = Boxers.byId(b0), B1 = Boxers.byId(b1);
     $('hud-flag-0').style.background = B0.country.css;
-    $('hud-name-0').textContent = B0.name + ' (P1)';
     $('hud-flag-1').style.background = B1.country.css;
-    $('hud-name-1').textContent = B1.name + (app.vsMode === '2p' ? ' (P2)' : ' (CPU)');
+    if (app.vsMode === 'online' && Net && Net.isConnected()) {
+      var isHost = Net.getRole() === 'host';
+      $('hud-name-0').textContent = B0.name + (isHost ? ' (YOU)' : ' (HOST)');
+      $('hud-name-1').textContent = B1.name + (isHost ? ' (OPPONENT)' : ' (YOU)');
+    } else {
+      $('hud-name-0').textContent = B0.name + ' (P1)';
+      $('hud-name-1').textContent = B1.name + (app.vsMode === '2p' ? ' (P2)' : ' (CPU)');
+    }
 
     $('hud-controls-hint').innerHTML = app.vsMode === '2p'
       ? '<strong>P1:</strong> A/D Move · J Jab · K Hook · L Uppercut · S Block · W/Space Dodge · <strong>E Combo</strong> &nbsp;|&nbsp; <strong>P2:</strong> ←/→ Move · 1/, Jab · 2/. Hook · 3// Upper · ↓/0 Block · ↑/Enter Dodge · <strong>I Combo</strong>'
@@ -276,6 +362,9 @@
   }
 
   function updateHUD(s) {
+    var isOnline = app.vsMode === 'online' && Net && Net.isConnected();
+    var localIdx = (isOnline && Net.getRole() === 'guest') ? 1 : 0;
+
     for (var i = 0; i < 2; i++) {
       var f = s.fighters[i];
       var hpPct = Math.max(0, Math.min(100, (f.hp / f.maxHp) * 100));
@@ -307,7 +396,9 @@
       if (momReadyPill) {
         var showReady = momReady && !s.comboState && !s.count && s.phase === 'fight';
         momReadyPill.classList.toggle('show', showReady);
-        if (i === 0) {
+        if (isOnline) {
+          momReadyPill.textContent = (i === localIdx) ? '⚡ COMBO READY! PRESS [E]' : '⚡ OPPONENT COMBO READY!';
+        } else if (i === 0) {
           momReadyPill.textContent = '⚡ COMBO READY! PRESS [E]';
         } else {
           momReadyPill.textContent = app.vsMode === '2p' ? '⚡ COMBO READY! PRESS [I]' : '⚡ CPU COMBO READY!';
@@ -334,12 +425,12 @@
       }
     }
 
-    // Mobile touch combo button: only appears when Player 1's momentum is READY (or during P1's active combo to tap timing)
+    // Mobile touch combo button: appears when the local player's combo meter is READY (or during their active combo)
     var touchComboBtn = $('btn-touch-combo');
     if (touchComboBtn) {
       var showTouchCombo = s.phase === 'fight' && !s.count &&
-        ((s.fighters[0].momentum >= C.MOMENTUM.max && !s.comboState) ||
-         (s.comboState && s.comboState.attacker === 0));
+        ((s.fighters[localIdx].momentum >= C.MOMENTUM.max && !s.comboState) ||
+         (s.comboState && s.comboState.attacker === localIdx));
       touchComboBtn.style.display = showTouchCombo ? 'flex' : 'none';
     }
 
@@ -385,11 +476,17 @@
         }
 
         var promptEl = $('cm-prompt');
-        var isHumanAtk = (cs.attacker === 0) || (cs.attacker === 1 && app.vsMode === '2p');
-        var atkKey = cs.attacker === 0 ? 'J / K / L / E' : '1 / 2 / 3 / I';
-        promptEl.textContent = isHumanAtk
-          ? ('PRESS [' + atkKey + '] WHEN THE NEEDLE HITS GREEN!')
-          : 'CPU EXECUTING SIGNATURE COMBO...';
+        if (isOnline) {
+          promptEl.textContent = (cs.attacker === localIdx)
+            ? 'PRESS [J / K / L / E] WHEN THE NEEDLE HITS GREEN!'
+            : 'OPPONENT EXECUTING SIGNATURE COMBO...';
+        } else {
+          var isHumanAtk = (cs.attacker === 0) || (cs.attacker === 1 && app.vsMode === '2p');
+          var atkKey = cs.attacker === 0 ? 'J / K / L / E' : '1 / 2 / 3 / I';
+          promptEl.textContent = isHumanAtk
+            ? ('PRESS [' + atkKey + '] WHEN THE NEEDLE HITS GREEN!')
+            : 'CPU EXECUTING SIGNATURE COMBO...';
+        }
       } else {
         cmBox.classList.remove('show');
       }
@@ -438,8 +535,14 @@
         trackEl.className = 'rise-track' + (tier >= 1 ? ' shake-' + tier : '');
       }
 
-      var humanDown = (s.count.who === 0) || (s.count.who === 1 && app.vsMode === '2p');
-      $('count-hint').textContent = humanDown ? 'MASH ANY KEY! (OR TAP FAST!)' : 'CPU TRYING TO BEAT THE COUNT...';
+      if (isOnline) {
+        $('count-hint').textContent = (s.count.who === localIdx)
+          ? 'MASH ANY KEY! (OR TAP FAST!)'
+          : 'OPPONENT TRYING TO BEAT THE COUNT...';
+      } else {
+        var humanDown = (s.count.who === 0) || (s.count.who === 1 && app.vsMode === '2p');
+        $('count-hint').textContent = humanDown ? 'MASH ANY KEY! (OR TAP FAST!)' : 'CPU TRYING TO BEAT THE COUNT...';
+      }
     } else {
       countBox.classList.remove('show');
     }
@@ -466,7 +569,13 @@
   function showResultModal(s) {
     var res = s.result;
     var wBoxer = Boxers.byId(s.boxers[res.winner]);
-    var corner = res.winner === 0 ? 'Player 1' : (app.vsMode === '2p' ? 'Player 2' : 'CPU');
+    var corner;
+    if (app.vsMode === 'online' && Net && Net.isConnected()) {
+      var localIdx = Net.getRole() === 'guest' ? 1 : 0;
+      corner = res.winner === localIdx ? 'You Won!' : 'Online Opponent';
+    } else {
+      corner = res.winner === 0 ? 'Player 1' : (app.vsMode === '2p' ? 'Player 2' : 'CPU');
+    }
     $('res-headline').textContent = wBoxer.name.toUpperCase() + ' WINS!';
     var m = Math.floor(res.time / 60), r = res.time % 60;
     var timeStr = m + ':' + (r < 10 ? '0' + r : r);
@@ -497,6 +606,7 @@
         '<tr><td>' + f1.kdTot + '</td><td>Knockdowns Scored</td><td>' + f0.kdTot + '</td></tr>' +
       '</tbody>';
 
+    if ($('btn-rematch')) $('btn-rematch').textContent = 'REMATCH 🔔';
     $('modal-result').classList.add('show');
   }
 
@@ -563,6 +673,17 @@
       g.BoxerArt.drawPreview($('preview-p2'), Boxers.byId(app.selected[1]), t + 1.2, -1);
     }
 
+    var pingBadge = $('net-ping-badge');
+    if (pingBadge) {
+      if (app.vsMode === 'online' && Net && Net.isConnected()) {
+        pingBadge.style.display = 'inline-block';
+        var pingVal = Net.getPing();
+        pingBadge.textContent = '🟢 ONLINE' + (pingVal > 0 ? (' • ' + pingVal + 'ms') : '');
+      } else {
+        pingBadge.style.display = 'none';
+      }
+    }
+
     if (!app.simState || !app.renderer) return;
 
     if (app.bannerTimer > 0 && !app.paused) {
@@ -571,36 +692,59 @@
     }
 
     var frameEvents = [];
+    var isOnlineFight = (app.screen === 'fight' && app.vsMode === 'online' && Net && Net.isConnected());
+    var isOnlineGuest = isOnlineFight && Net.getRole() === 'guest';
+
     if (!app.paused) {
       var scale = app.simState.timeScale || 1;
       app.accumulator += realDt * scale;
       var steps = 0;
       while (app.accumulator >= C.DT && steps < C.MAX_STEPS_PER_FRAME) {
-        app.prevSimState = app.simState;
-        var in0, in1;
-        if (app.screen === 'title') {
-          in0 = copyInput(app.ai0.think(app.simState));
-          in1 = copyInput(app.ai1.think(app.simState));
+        if (isOnlineGuest) {
+          // Online Guest: sample local Player 1 controls and send to Host; state comes from Host snapshots
+          var gInp = copyInput(Input.sampleP1());
+          app.lastStepInputs[1] = gInp;
+          Net.sendGuestInput(gInp);
         } else {
-          // Sample human input ONCE per simulation step; never share objects between P1 and P2/CPU
-          in0 = copyInput(Input.sampleP1());
-          in1 = app.vsMode === '2p'
-            ? copyInput(Input.sampleP2())
-            : copyInput(app.ai1.think(app.simState));
-        }
-        app.lastStepInputs = [in0, in1];
-        app.simState = Sim.step(app.simState, in0, in1);
-        if (app.screen === 'fight' && app.simState.events.length) {
-          for (var i = 0; i < app.simState.events.length; i++) frameEvents.push(app.simState.events[i]);
-        }
-        if (app.screen === 'title' && app.simState.phase === 'finished' && app.simState.phaseT > 120) {
-          startAttractFight();
-          break;
+          app.prevSimState = app.simState;
+          var in0, in1;
+          if (app.screen === 'title') {
+            in0 = copyInput(app.ai0.think(app.simState));
+            in1 = copyInput(app.ai1.think(app.simState));
+          } else if (isOnlineFight && Net.getRole() === 'host') {
+            in0 = copyInput(Input.sampleP1());
+            in1 = copyInput(Net.consumeRemoteInput());
+          } else {
+            // Sample human input ONCE per simulation step; never share objects between P1 and P2/CPU
+            in0 = copyInput(Input.sampleP1());
+            in1 = app.vsMode === '2p'
+              ? copyInput(Input.sampleP2())
+              : copyInput(app.ai1.think(app.simState));
+          }
+          app.lastStepInputs = [in0, in1];
+          app.simState = Sim.step(app.simState, in0, in1);
+          if (app.screen === 'fight' && app.simState.events.length) {
+            for (var i = 0; i < app.simState.events.length; i++) frameEvents.push(app.simState.events[i]);
+          }
+          if (isOnlineFight && Net.getRole() === 'host') {
+            Net.sendHostState(app.simState, app.simState.events);
+          }
+          if (app.screen === 'title' && app.simState.phase === 'finished' && app.simState.phaseT > 120) {
+            startAttractFight();
+            break;
+          }
         }
         app.accumulator -= C.DT;
         steps++;
       }
       if (steps >= C.MAX_STEPS_PER_FRAME) app.accumulator = 0;
+    }
+
+    if (isOnlineGuest && app.onlineEventsQueue.length) {
+      for (var eq = 0; eq < app.onlineEventsQueue.length; eq++) {
+        frameEvents.push(app.onlineEventsQueue[eq]);
+      }
+      app.onlineEventsQueue = [];
     }
 
     if (app.screen === 'fight') {
@@ -1255,13 +1399,147 @@
 
     Array.prototype.forEach.call($('seg-vs').querySelectorAll('button'), function (btn) {
       btn.addEventListener('click', function () {
-        app.vsMode = btn.getAttribute('data-vs');
+        var nextMode = btn.getAttribute('data-vs');
+        if (app.vsMode === 'online' && nextMode !== 'online' && Net && Net.isConnected()) {
+          Net.disconnect(true);
+        }
+        app.vsMode = nextMode;
         Array.prototype.forEach.call($('seg-vs').querySelectorAll('button'), function (b) {
           b.classList.toggle('active', b === btn);
         });
         renderSelectScreen();
       });
     });
+
+    // Online Matchmaking UI & Net handlers
+    function updateOnlineStatusUI(st) {
+      var dot = $('net-status-dot');
+      var txt = $('net-status-text');
+      var codeBox = $('net-code-box');
+      var codeVal = $('net-code-val');
+      var leaveBtn = $('btn-net-leave');
+      var actRow = $('online-actions-row');
+      if (dot) {
+        dot.className = 'net-dot' +
+          (st.connected ? ' connected' : (st.state === 'waiting' || st.state === 'connecting' ? ' waiting' : (st.state === 'error' ? ' error' : '')));
+      }
+      if (txt && st.message) txt.textContent = st.message;
+      var showCode = st.roomCode && st.roomCode !== 'QUICK' && (st.state === 'waiting' || st.connected);
+      if (codeBox) codeBox.style.display = showCode ? 'inline-flex' : 'none';
+      if (codeVal && showCode) codeVal.textContent = st.roomCode;
+      var activeSession = st.connected || st.state === 'waiting' || st.state === 'connecting';
+      if (leaveBtn) leaveBtn.style.display = activeSession ? 'inline-block' : 'none';
+      if (actRow) actRow.style.display = st.connected ? 'none' : 'flex';
+      renderSelectScreen();
+    }
+
+    if (Net) {
+      Net.setHandlers({
+        onStatus: updateOnlineStatusUI,
+        onConnected: function (info) {
+          app.guestReady = false;
+          var mySlot = info.role === 'host' ? 0 : 1;
+          Net.send({ t: 'sel', slot: mySlot, boxer: app.selected[mySlot] });
+          var msg = info.role === 'host'
+            ? 'Opponent connected! Pick your fighter and click START ONLINE FIGHT.'
+            : 'Connected to Host! Pick your fighter (Blue Corner) and tap READY.';
+          updateOnlineStatusUI({ state: 'connected', connected: true, role: info.role, roomCode: info.roomCode, message: msg });
+        },
+        onDisconnected: function (reason) {
+          app.guestReady = false;
+          updateOnlineStatusUI({ state: 'disconnected', connected: false, roomCode: '', message: reason || 'Disconnected.' });
+          if (app.screen === 'fight' && app.vsMode === 'online') {
+            showScreen('select');
+          }
+        },
+        onRemoteSelect: function (slot, boxerId) {
+          if ((slot === 0 || slot === 1) && Boxers.byId(boxerId)) {
+            app.selected[slot] = boxerId;
+            if (app.screen === 'select') renderSelectScreen();
+          }
+        },
+        onRemoteReady: function (rdy) {
+          app.guestReady = !!rdy;
+          if (app.screen === 'select') renderSelectScreen();
+        },
+        onMatchStart: function (payload) {
+          hideModals();
+          startMatch(payload);
+        },
+        onStateSnapshot: function (remoteState, remoteEvents) {
+          if (app.screen !== 'fight' || app.vsMode !== 'online') return;
+          app.prevSimState = app.simState || remoteState;
+          app.simState = remoteState;
+          if (remoteEvents && remoteEvents.length) {
+            for (var i = 0; i < remoteEvents.length; i++) {
+              app.onlineEventsQueue.push(remoteEvents[i]);
+            }
+          }
+        },
+        onSkipRest: function () {
+          doSkipRest(true);
+        },
+        onRematchRequest: function () {
+          if (Net.getRole() === 'host') {
+            hideModals();
+            startMatch();
+          }
+        }
+      });
+
+      var btnQuick = $('btn-net-quick');
+      if (btnQuick) btnQuick.addEventListener('click', function () {
+        if (Audio) Audio.resume();
+        Net.quickMatch();
+      });
+      var btnHost = $('btn-net-host');
+      if (btnHost) btnHost.addEventListener('click', function () {
+        if (Audio) Audio.resume();
+        Net.hostRoom();
+      });
+      var btnJoin = $('btn-net-join');
+      var inpCode = $('inp-net-code');
+      if (btnJoin && inpCode) {
+        btnJoin.addEventListener('click', function () {
+          if (Audio) Audio.resume();
+          Net.joinRoom(inpCode.value);
+        });
+        inpCode.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            Net.joinRoom(inpCode.value);
+          }
+        });
+      }
+      var btnCopyCode = $('btn-net-copy-code');
+      if (btnCopyCode) btnCopyCode.addEventListener('click', function () {
+        var code = Net.getRoomCode();
+        if (code && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(code);
+          btnCopyCode.textContent = '✓ COPIED';
+          setTimeout(function () { btnCopyCode.textContent = '📋 CODE'; }, 1500);
+        }
+      });
+      var btnCopyLink = $('btn-net-copy-link');
+      if (btnCopyLink) btnCopyLink.addEventListener('click', function () {
+        var code = Net.getRoomCode();
+        if (!code) return;
+        var base = window.location.origin && window.location.origin !== 'null'
+          ? (window.location.origin + window.location.pathname)
+          : 'https://ironfistboxing.club/';
+        var url = base + '?room=' + encodeURIComponent(code);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url);
+          btnCopyLink.textContent = '✓ LINK COPIED';
+          setTimeout(function () { btnCopyLink.textContent = '🔗 INVITE LINK'; }, 1500);
+        }
+      });
+      var btnLeave = $('btn-net-leave');
+      if (btnLeave) btnLeave.addEventListener('click', function () {
+        Net.disconnect(true);
+        updateOnlineStatusUI({ state: 'idle', connected: false, roomCode: '', message: 'Disconnected. Choose Quick Match, Host Room, or Join Room.' });
+      });
+    }
 
     Array.prototype.forEach.call($('seg-diff').querySelectorAll('button'), function (b) {
       b.classList.toggle('active', b.getAttribute('data-diff') === app.difficulty);
@@ -1278,23 +1556,42 @@
 
     $('btn-random').addEventListener('click', function () {
       var list = Boxers.list;
-      var i0 = Math.floor(Math.random() * list.length);
-      var i1 = (i0 + 1 + Math.floor(Math.random() * (list.length - 1))) % list.length;
-      app.selected = [list[i0].id, list[i1].id];
+      if (app.vsMode === 'online' && Net && Net.isConnected()) {
+        var mySlot = Net.getRole() === 'host' ? 0 : 1;
+        var pick = list[Math.floor(Math.random() * list.length)].id;
+        app.selected[mySlot] = pick;
+        Net.send({ t: 'sel', slot: mySlot, boxer: pick });
+      } else {
+        var i0 = Math.floor(Math.random() * list.length);
+        var i1 = (i0 + 1 + Math.floor(Math.random() * (list.length - 1))) % list.length;
+        app.selected = [list[i0].id, list[i1].id];
+      }
       renderSelectScreen();
     });
 
     $('btn-select-back').addEventListener('click', function () { showScreen('title'); });
-    $('btn-start-fight').addEventListener('click', startMatch);
+    $('btn-start-fight').addEventListener('click', function () { startMatch(); });
 
     $('btn-pause').addEventListener('click', togglePause);
     $('btn-resume').addEventListener('click', togglePause);
-    $('btn-restart').addEventListener('click', function () { hideModals(); startMatch(); });
+    $('btn-restart').addEventListener('click', function () {
+      if (app.vsMode === 'online' && Net && Net.isConnected() && Net.getRole() === 'guest') {
+        Net.send({ t: 'rematch' });
+        hideModals();
+        return;
+      }
+      hideModals();
+      startMatch();
+    });
     $('btn-pause-select').addEventListener('click', function () { showScreen('select'); });
     $('btn-pause-title').addEventListener('click', function () { showScreen('title'); });
 
-    $('btn-skip-rest').addEventListener('click', function () {
+    function doSkipRest(fromRemote) {
       if (!app.simState || app.simState.phase !== 'rest') return;
+      if (app.vsMode === 'online' && Net && Net.isConnected()) {
+        if (!fromRemote) Net.send({ t: 'skip_rest' });
+        if (Net.getRole() === 'guest') return;
+      }
       Input.reset();
       var guard = 0;
       while (app.simState.phase === 'rest' && guard < C.REST_SECONDS * C.FPS + 5) {
@@ -1303,17 +1600,44 @@
         if (app.simState.events.length) handleFightEvents(app.simState.events);
         guard++;
       }
+      if (app.vsMode === 'online' && Net && Net.isConnected() && Net.getRole() === 'host') {
+        Net.sendHostState(app.simState, app.simState.events);
+      }
       updateHUD(app.simState);
-    });
+    }
 
-    $('btn-rematch').addEventListener('click', function () { hideModals(); startMatch(); });
+    $('btn-skip-rest').addEventListener('click', function () { doSkipRest(false); });
+
+    $('btn-rematch').addEventListener('click', function () {
+      if (app.vsMode === 'online' && Net && Net.isConnected() && Net.getRole() === 'guest') {
+        Net.send({ t: 'rematch' });
+        $('btn-rematch').textContent = 'WAITING FOR HOST...';
+        return;
+      }
+      hideModals();
+      startMatch();
+    });
     $('btn-res-select').addEventListener('click', function () { showScreen('select'); });
     $('btn-res-title').addEventListener('click', function () { showScreen('title'); });
 
     showScreen('title');
-    if (window.location && window.location.search && window.location.search.indexOf('screen=select') >= 0) showScreen('select');
-    if (window.location && window.location.search && window.location.search.indexOf('selftest=1') >= 0) {
-      runSelfTest();
+    if (window.location && window.location.search) {
+      var qs = window.location.search;
+      if (qs.indexOf('screen=select') >= 0) showScreen('select');
+      var roomMatch = qs.match(/[?&]room=([A-Za-z0-9]+)/);
+      if (roomMatch && roomMatch[1] && Net) {
+        var joinCode = roomMatch[1].toUpperCase();
+        app.vsMode = 'online';
+        Array.prototype.forEach.call($('seg-vs').querySelectorAll('button'), function (b) {
+          b.classList.toggle('active', b.getAttribute('data-vs') === 'online');
+        });
+        showScreen('select');
+        if ($('inp-net-code')) $('inp-net-code').value = joinCode;
+        Net.joinRoom(joinCode);
+      }
+      if (qs.indexOf('selftest=1') >= 0) {
+        runSelfTest();
+      }
     }
     requestAnimationFrame(tickFrame);
   }

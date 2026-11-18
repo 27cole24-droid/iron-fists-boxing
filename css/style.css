@@ -1422,3 +1422,153 @@ body.is-touch #btn-fullscreen { display: inline-block; }
   .select-footer { position: sticky; bottom: 0; background: rgba(7,6,14,0.94); padding: 6px 0; z-index: 5; }
 }
 
+/* ===== Online Multiplayer Matchmaking Panel & Ping Badge ===== */
+.net-ping-badge {
+  background: rgba(10, 9, 20, 0.88);
+  border: 1px solid rgba(74, 222, 128, 0.5);
+  color: #4ade80;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(8px);
+}
+.online-panel {
+  background: rgba(14, 16, 32, 0.92);
+  border: 1.5px solid rgba(56, 189, 248, 0.45);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+.online-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.btn-net-primary {
+  background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
+  color: #04131d;
+  border: none;
+  border-radius: 9px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #075985;
+}
+.btn-net-primary:hover { filter: brightness(1.08); }
+.btn-net-sec {
+  background: rgba(30, 41, 59, 0.95);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.btn-net-sec:hover { border-color: #38bdf8; }
+.net-join-group {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.net-join-group input {
+  width: 112px;
+  background: rgba(6, 8, 18, 0.95);
+  color: #fde047;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: Consolas, monospace;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.net-join-group input:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+.online-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+.net-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #64748b;
+  display: inline-block;
+}
+.net-dot.waiting {
+  background: #facc15;
+  box-shadow: 0 0 8px #facc15;
+}
+.net-dot.connected {
+  background: #4ade80;
+  box-shadow: 0 0 10px #4ade80;
+}
+.net-dot.error {
+  background: #f87171;
+  box-shadow: 0 0 8px #f87171;
+}
+.net-status-text {
+  font-weight: 700;
+  flex: 1;
+  min-width: 180px;
+}
+.net-code-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(250, 204, 21, 0.14);
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  border-radius: 8px;
+  padding: 4px 10px;
+  color: #fef08a;
+  font-size: 12px;
+}
+.net-code-box strong {
+  font-family: Consolas, monospace;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: #fff;
+}
+.btn-net-mini {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.btn-net-mini:hover { border-color: var(--gold); }
+.btn-net-mini.danger {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+.roster-card.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+
