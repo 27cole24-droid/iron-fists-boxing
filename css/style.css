@@ -259,7 +259,7 @@ html, body {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  padding-right: 210px;
+  padding-right: 340px;
 }
 .select-title {
   font-family: Impact, 'Arial Black', sans-serif;
@@ -489,6 +489,7 @@ html, body {
   justify-content: space-between;
   align-items: center;
   padding-top: 8px;
+  padding-right: 220px;
 }
 
 /* Fight HUD */
@@ -1305,11 +1306,14 @@ body.is-touch .icon-btn, body.is-touch .mode-switch button { min-height: 38px; }
 #btn-fullscreen { display: none; }
 body.is-touch #btn-fullscreen { display: inline-block; }
 
-/* Tablets / phones */
+/* Tablets / medium screens / phones */
+@media (max-width: 1180px) {
+  .select-header { padding-right: 0; padding-top: 48px; }
+}
 @media (max-width: 900px) {
   .title-card { padding: 22px 18px; }
   .title-controls-mini { display: none; }
-  .select-header { padding-right: 0; padding-top: 44px; }
+  .select-header { padding-right: 0; padding-top: 48px; }
   .select-title { font-size: 22px; }
   #screen-select { padding: 10px 12px; }
   .bar-shell { height: 16px; }
@@ -1394,7 +1398,7 @@ body.is-touch #btn-fullscreen { display: inline-block; }
   .title-sub { display: none; }
   .title-actions { flex-direction: column; gap: 12px; margin-top: 16px; }
   .title-actions button { width: 100%; min-height: 54px; font-size: 17px; padding: 12px 16px; }
-  .select-footer { position: sticky; bottom: 0; z-index: 5; background: rgba(7, 6, 14, 0.94); margin: 0 -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,0.12); }
+  .select-footer { position: sticky; bottom: 0; z-index: 5; background: rgba(7, 6, 14, 0.94); margin: 0 -12px; padding: 10px 155px calc(10px + env(safe-area-inset-bottom)) 12px; border-top: 1px solid rgba(255,255,255,0.12); }
   .select-footer .btn-primary { flex: 1; margin-left: 10px; padding: 12px 10px; font-size: 16px; }
   .fp-bio { display: none; }
   .select-grid { gap: 8px; }
@@ -1416,10 +1420,10 @@ body.is-touch #btn-fullscreen { display: inline-block; }
   .roster-strip { margin-top: 6px; }
   .roster-card { padding: 4px; }
   .rc-dot { width: 16px; height: 16px; }
-  .select-header { padding-top: 0; padding-right: 150px; }
+  .select-header { padding-top: 42px; padding-right: 0; }
   .select-title { font-size: 18px; }
   .vs-badge { font-size: 26px; }
-  .select-footer { position: sticky; bottom: 0; background: rgba(7,6,14,0.94); padding: 6px 0; z-index: 5; }
+  .select-footer { position: sticky; bottom: 0; background: rgba(7,6,14,0.94); padding: 6px 175px 6px 0; z-index: 5; }
 }
 
 /* ===== Online Multiplayer Matchmaking Panel & Ping Badge ===== */
