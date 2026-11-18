@@ -1,12 +1,22 @@
-/* main.js - UI screens, renderer switching, fixed-timestep accumulator loop, debug overlay, and self-test. */
+﻿/* main.js - UI screens, renderer switching, fixed-timestep accumulator loop, debug overlay, and self-test. */
 (function (g) {
   'use strict';
   var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio;
 
+  var DIFF_KEY = 'ironFistsDifficulty';
+  function loadDifficulty() {
+    try {
+      var v = window.localStorage.getItem(DIFF_KEY);
+      if (v === 'easy' || v === 'normal' || v === 'hard') return v;
+    } catch (_) {}
+    return 'easy';
+  }
+  function saveDifficulty(v) { try { window.localStorage.setItem(DIFF_KEY, v); } catch (_) {} }
+
   var app = {
     screen: 'title',          // 'title' | 'select' | 'fight'
     vsMode: 'cpu',            // 'cpu' | '2p'
-    difficulty: 'normal',     // 'easy' | 'normal' | 'hard'
+    difficulty: loadDifficulty(), // 'easy' (default) | 'normal' (Medium) | 'hard' -- remembered in localStorage
     renderMode: '2d',         // '2d' | '3d'
     selected: ['viper', 'hammer'],
     paused: false,
@@ -168,7 +178,7 @@
   }
 
   function renderSelectScreen() {
-    $('p2-corner-tag').textContent = app.vsMode === '2p' ? 'BLUE CORNER • P2' : 'BLUE CORNER • CPU';
+    $('p2-corner-tag').textContent = app.vsMode === '2p' ? 'BLUE CORNER â€¢ P2' : 'BLUE CORNER â€¢ CPU';
     $('seg-diff').style.display = app.vsMode === 'cpu' ? 'inline-flex' : 'none';
     buildRosterStrip(0);
     buildRosterStrip(1);
@@ -183,7 +193,7 @@
     Input.reset();
     app.seedCounter = (app.seedCounter + 37) | 0;
     var b0 = app.selected[0], b1 = app.selected[1];
-    app.simState = Sim.create({ boxers: [b0, b1], seed: app.seedCounter, priorKOs: app.priorKOs });
+    app.simState = Sim.create({ boxers: [b0, b1], seed: app.seedCounter, priorKOs: app.priorKOs, vsCpu: app.vsMode === 'cpu', difficulty: app.difficulty });
     app.prevSimState = app.simState;
     app.ai0 = null;
     app.ai1 = app.vsMode === 'cpu'
@@ -203,11 +213,11 @@
     $('hud-name-1').textContent = B1.name + (app.vsMode === '2p' ? ' (P2)' : ' (CPU)');
 
     $('hud-controls-hint').innerHTML = app.vsMode === '2p'
-      ? '<strong>P1:</strong> A/D Move · J Jab · K Hook · L Uppercut · S Block · W/Space Dodge · <strong>E Combo</strong> &nbsp;|&nbsp; <strong>P2:</strong> ←/→ Move · 1/, Jab · 2/. Hook · 3// Upper · ↓/0 Block · ↑/Enter Dodge · <strong>I Combo</strong>'
-      : '<strong>Move:</strong> A/D or ←/→ &nbsp;•&nbsp; <strong>Jab:</strong> J &nbsp;•&nbsp; <strong>Hook:</strong> K &nbsp;•&nbsp; <strong>Uppercut:</strong> L &nbsp;•&nbsp; <strong>Block:</strong> S &nbsp;•&nbsp; <strong>Dodge:</strong> W/Space &nbsp;•&nbsp; <strong>Signature Combo:</strong> E';
+      ? '<strong>P1:</strong> A/D Move Â· J Jab Â· K Hook Â· L Uppercut Â· S Block Â· W/Space Dodge Â· <strong>E Combo</strong> &nbsp;|&nbsp; <strong>P2:</strong> â†/â†’ Move Â· 1/, Jab Â· 2/. Hook Â· 3// Upper Â· â†“/0 Block Â· â†‘/Enter Dodge Â· <strong>I Combo</strong>'
+      : '<strong>Move:</strong> A/D or â†/â†’ &nbsp;â€¢&nbsp; <strong>Jab:</strong> J &nbsp;â€¢&nbsp; <strong>Hook:</strong> K &nbsp;â€¢&nbsp; <strong>Uppercut:</strong> L &nbsp;â€¢&nbsp; <strong>Block:</strong> S &nbsp;â€¢&nbsp; <strong>Dodge:</strong> W/Space &nbsp;â€¢&nbsp; <strong>Signature Combo:</strong> E';
 
     showScreen('fight');
-    showBanner('ROUND 1 — FIGHT!', 1.4);
+    showBanner('ROUND 1 â€” FIGHT!', 1.4);
     if (Audio && app.simState.events.length) Audio.handle(app.simState.events);
     updateHUD(app.simState);
   }
@@ -231,14 +241,14 @@
         showBanner('FIGHT!', 1.0);
       } else if (e.type === 'combo_start') {
         app.comboGrades = [];
-        showBanner('COMBO! — ' + e.name.toUpperCase(), 1.15);
+        showBanner('COMBO! â€” ' + e.name.toUpperCase(), 1.15);
       } else if (e.type === 'combo_too_far') {
         showBanner('TOO FAR!', 0.65);
       } else if (e.type === 'combo_hit') {
         app.comboGrades[e.hitIndex] = e.grade;
       } else if (e.type === 'combo_end') {
         if (e.instantKO) {
-          showBanner('GREEN COMBO — KNOCKOUT!', 2.6);
+          showBanner('GREEN COMBO â€” KNOCKOUT!', 2.6);
         } else if (e.greenCount === e.totalHits && !e.broken) {
           showBanner('PERFECT COMBO! ' + e.greenCount + '/' + e.totalHits + ' GREEN!', 1.3);
         }
@@ -292,15 +302,15 @@
       if (momShell) momShell.classList.toggle('ready', momReady);
       if (momLbl) {
         var sigName = Boxers.byId(f.bid).signatureCombo ? Boxers.byId(f.bid).signatureCombo.name.toUpperCase() : 'COMBO';
-        momLbl.textContent = momReady ? ('COMBO READY — ' + sigName) : ('COMBO ' + Math.floor(momPct) + '%');
+        momLbl.textContent = momReady ? ('COMBO READY â€” ' + sigName) : ('COMBO ' + Math.floor(momPct) + '%');
       }
       if (momReadyPill) {
         var showReady = momReady && !s.comboState && !s.count && s.phase === 'fight';
         momReadyPill.classList.toggle('show', showReady);
         if (i === 0) {
-          momReadyPill.textContent = '⚡ COMBO READY! PRESS [E]';
+          momReadyPill.textContent = 'âš¡ COMBO READY! PRESS [E]';
         } else {
-          momReadyPill.textContent = app.vsMode === '2p' ? '⚡ COMBO READY! PRESS [I]' : '⚡ CPU COMBO READY!';
+          momReadyPill.textContent = app.vsMode === '2p' ? 'âš¡ COMBO READY! PRESS [I]' : 'âš¡ CPU COMBO READY!';
         }
       }
 
@@ -308,8 +318,8 @@
       var kdBadge = $('hud-kd-' + i);
       if (kdBadge) {
         var tot = f.kdTot + (f.priorKOs || 0);
-        var skulls = tot === 0 ? '' : (tot >= 3 ? '💀×' + tot + ' ' : '💥×' + tot + ' ');
-        var koSuffix = f.priorKOs > 0 ? (' • KO: ' + f.priorKOs) : '';
+        var skulls = tot === 0 ? '' : (tot >= 3 ? 'ðŸ’€Ã—' + tot + ' ' : 'ðŸ’¥Ã—' + tot + ' ');
+        var koSuffix = f.priorKOs > 0 ? (' â€¢ KO: ' + f.priorKOs) : '';
         kdBadge.textContent = skulls + 'KD: ' + f.kdTot + koSuffix;
         kdBadge.className = 'kd-badge' +
           (tot >= 3 ? ' kd-danger' : (tot === 2 ? ' kd-orange' : (tot === 1 ? ' kd-warn' : '')));
@@ -340,7 +350,7 @@
         var cs = s.comboState;
         cmBox.classList.add('show');
         $('cm-sig-name').textContent = cs.name.toUpperCase();
-        $('cm-hit-info').textContent = 'HIT ' + (cs.hitIndex + 1) + ' / ' + cs.totalHits + ' — ' + cs.hitLabel + ' (' + cs.punchType.toUpperCase() + ')';
+        $('cm-hit-info').textContent = 'HIT ' + (cs.hitIndex + 1) + ' / ' + cs.totalHits + ' â€” ' + cs.hitLabel + ' (' + cs.punchType.toUpperCase() + ')';
 
         var pipsEl = $('cm-pips');
         if (pipsEl) {
@@ -399,7 +409,7 @@
       var pct = Math.max(0, Math.min(100, Math.round((downed.getup / C.KNOCKDOWN.meterMax) * 100)));
 
       countBox.classList.add('show');
-      $('count-who').textContent = Boxers.byId(downed.bid).name.toUpperCase() + ' — KNOCKDOWN #' + downed.kdTot;
+      $('count-who').textContent = Boxers.byId(downed.bid).name.toUpperCase() + ' â€” KNOCKDOWN #' + downed.kdTot;
 
       var priorKoStr = downed.priorKOs > 0 ? (' + ' + downed.priorKOs + ' PRIOR KO' + (downed.priorKOs > 1 ? 'S' : '')) : '';
       var diffLabels = [
@@ -437,10 +447,10 @@
     var restBox = $('hud-rest');
     if (s.phase === 'rest') {
       restBox.classList.add('show');
-      $('rest-title').textContent = 'CORNER REST — AFTER ROUND ' + s.round;
+      $('rest-title').textContent = 'CORNER REST â€” AFTER ROUND ' + s.round;
       var card = app.lastRoundCard || [10, 10];
       var b0 = Boxers.byId(s.boxers[0]).nick, b1 = Boxers.byId(s.boxers[1]).nick;
-      $('rest-card').textContent = 'Unofficial Round Score: ' + b0 + ' ' + card[0] + ' — ' + card[1] + ' ' + b1;
+      $('rest-card').textContent = 'Unofficial Round Score: ' + b0 + ' ' + card[0] + ' â€” ' + card[1] + ' ' + b1;
       var rem = Math.max(0, Math.ceil((C.REST_SECONDS * C.FPS - s.phaseT) / C.FPS));
       $('rest-clock').textContent = 'Next Round in ' + rem + 's';
     } else {
@@ -462,7 +472,7 @@
     var timeStr = m + ':' + (r < 10 ? '0' + r : r);
     $('res-sub').textContent = res.method === 'Decision'
       ? (res.detail + ' (' + corner + ')')
-      : ('Winner by ' + res.method + ' (10-Count) in Round ' + res.round + ' (' + timeStr + ') • ' + corner);
+      : ('Winner by ' + res.method + ' (10-Count) in Round ' + res.round + ' (' + timeStr + ') â€¢ ' + corner);
 
     var B0 = Boxers.byId(s.boxers[0]), B1 = Boxers.byId(s.boxers[1]);
     var cardsWrap = $('res-cards-wrap');
@@ -519,7 +529,7 @@
       var bufStr = f.buffer ? (f.buffer + ' (' + f.bufT + 'f)') : 'none';
       var momStr = f.momentum.toFixed(1) + '/' + C.MOMENTUM.max + (f.momentum >= C.MOMENTUM.max ? ' [READY]' : '');
       return '<div class="dbg-col">' +
-        '<div class="dbg-title">FIGHTER ' + (idx + 1) + ' (' + f.bid.toUpperCase() + ') — Source: ' + src + '</div>' +
+        '<div class="dbg-title">FIGHTER ' + (idx + 1) + ' (' + f.bid.toUpperCase() + ') â€” Source: ' + src + '</div>' +
         '<div>Raw Held Keys: <strong>' + (rawKeys.length ? rawKeys.join(', ') : 'none') + '</strong></div>' +
         '<div>Step Input: ' + formatInputFlags(stepInp) + '</div>' +
         '<div>Action: <strong>' + f.action + '</strong> | Frame: ' + f.t + '/' + f.dur + ' | Prog: ' + f.prog.toFixed(2) + '</div>' +
@@ -533,7 +543,7 @@
       : '';
 
     el.innerHTML =
-      '<div><strong>DEBUG OVERLAY</strong> (Toggle: <span class="kbd">`</span> or <span class="kbd">F3</span>) — Tick: ' + s.tick + ' | Phase: ' + s.phase + ' | Hitstop: ' + s.hitstop + csInfo + '</div>' +
+      '<div><strong>DEBUG OVERLAY</strong> (Toggle: <span class="kbd">`</span> or <span class="kbd">F3</span>) â€” Tick: ' + s.tick + ' | Phase: ' + s.phase + ' | Hitstop: ' + s.hitstop + csInfo + '</div>' +
       '<div class="dbg-grid">' +
         colHTML(0, src0, src0 === 'human' ? dbgIn.p1Keys : ['(CPU AI)'], app.lastStepInputs[0]) +
         colHTML(1, src1, src1 === 'human' ? dbgIn.p2Keys : ['(CPU AI)'], app.lastStepInputs[1]) +
@@ -627,7 +637,7 @@
     var results = [];
     function check(name, pass, detail) {
       results.push({ name: name, pass: !!pass, detail: detail || '' });
-      console.log((pass ? '[PASS] ' : '[FAIL] ') + name + (detail ? ' — ' + detail : ''));
+      console.log((pass ? '[PASS] ' : '[FAIL] ') + name + (detail ? ' â€” ' + detail : ''));
     }
 
     // 1. Idle 5s: position never changes & no punch thrown
@@ -1014,6 +1024,135 @@
       );
     })();
 
+    // 17. CPU difficulty: reaction delay, block rate and combo frequency are lowest on Easy
+    (function () {
+      var DD = AI.DIFFICULTIES;
+      var cfgOk = DD.easy.react >= 18 && DD.easy.react > DD.normal.react && DD.normal.react > DD.hard.react &&
+        DD.easy.blockP < DD.normal.blockP && DD.normal.blockP < DD.hard.blockP &&
+        DD.easy.sigChance < DD.normal.sigChance && DD.normal.sigChance < DD.hard.sigChance;
+      function measure(diff) {
+        var s = Sim.create({ boxers: ['viper', 'hammer'], seed: 77, vsCpu: true, difficulty: diff });
+        var ai = AI.create({ index: 1, boxerId: 'hammer', difficulty: diff, seed: 31 });
+        var blockTicks = 0, ticks = 0, combos = 0;
+        for (var i = 0; i < 3600 && s.phase === 'fight'; i++) {
+          s.fighters[0].hp = 100; s.fighters[0].st = s.fighters[0].maxSt; s.fighters[1].hp = 100;
+          if (!s.comboState && s.fighters[1].momentum < 100) s.fighters[1].momentum = 100;
+          if (!s.comboState && Math.abs(s.fighters[0].x - s.fighters[1].x) > 1.0) s.fighters[0].x = s.fighters[1].x - 1.0;
+          var in1 = ai.think(s);
+          if (!s.comboState) { ticks++; if (in1.block) blockTicks++; }
+          s = Sim.step(s, { jab: i % 50 === 0 }, in1);
+          s.events.forEach(function (e) { if (e.type === 'combo_start' && e.who === 1) combos++; });
+        }
+        return { block: blockTicks / Math.max(1, ticks), combos: combos };
+      }
+      var mE = measure('easy'), mN = measure('normal'), mH = measure('hard');
+      var measured = mE.block < mN.block && mE.block < mH.block && mE.combos < mN.combos && mE.combos <= mH.combos;
+      check(
+        '17. CPU Easy: slower reactions, lower block rate and fewer combos than Medium/Hard',
+        cfgOk && measured,
+        'react ' + DD.easy.react + '/' + DD.normal.react + '/' + DD.hard.react +
+        ', block% ' + (mE.block * 100).toFixed(0) + '/' + (mN.block * 100).toFixed(0) + '/' + (mH.block * 100).toFixed(0) +
+        ', combos ' + mE.combos + '/' + mN.combos + '/' + mH.combos
+      );
+    })();
+
+    // 18. Human damage multipliers apply only in VS CPU mode; Local 2 Player has none
+    (function () {
+      function jabLoss(opts, attackerIdx) {
+        var o = { boxers: ['viper', 'hammer'], seed: 905 };
+        for (var k in opts) o[k] = opts[k];
+        var s = Sim.create(o);
+        s.fighters[0].x = -0.35; s.fighters[1].x = 0.35;
+        for (var i = 0; i < 40; i++) {
+          var a = { jab: i === 0 };
+          s = Sim.step(s, attackerIdx === 0 ? a : {}, attackerIdx === 1 ? a : {});
+        }
+        return 100 - s.fighters[1 - attackerIdx].hp;
+      }
+      var base0 = jabLoss({}, 0), base1 = jabLoss({}, 1);
+      var twoP0 = jabLoss({ vsCpu: false }, 0), twoP1 = jabLoss({ vsCpu: false }, 1);
+      var e0 = jabLoss({ vsCpu: true, difficulty: 'easy' }, 0), e1 = jabLoss({ vsCpu: true, difficulty: 'easy' }, 1);
+      var m0 = jabLoss({ vsCpu: true, difficulty: 'normal' }, 0), m1 = jabLoss({ vsCpu: true, difficulty: 'normal' }, 1);
+      var h0 = jabLoss({ vsCpu: true, difficulty: 'hard' }, 0);
+      var s2p = Sim.create({ boxers: ['viper', 'hammer'], seed: 1, vsCpu: false });
+      var ok = base0 > 0 && base1 > 0 && twoP0 === base0 && twoP1 === base1 &&
+        s2p.fighters[0].assist === null && s2p.fighters[1].assist === null &&
+        Math.abs(e0 / base0 - C.ASSIST.easy.dmgDealt) < 0.02 && Math.abs(e1 / base1 - C.ASSIST.easy.dmgTaken) < 0.02 &&
+        Math.abs(m0 / base0 - C.ASSIST.normal.dmgDealt) < 0.02 && Math.abs(m1 / base1 - C.ASSIST.normal.dmgTaken) < 0.02 &&
+        Math.abs(h0 / base0 - 1) < 0.001;
+      check(
+        '18. Human damage x1.25/x0.7 (Easy), x1.1/x0.85 (Medium), x1.0 (Hard) only in VS CPU; Local 2P unchanged',
+        ok,
+        'dealt easy ' + (e0 / base0).toFixed(2) + ', taken easy ' + (e1 / base1).toFixed(2) + ', dealt med ' + (m0 / base0).toFixed(2) +
+        ', taken med ' + (m1 / base1).toFixed(2) + ', 2P ' + (twoP0 === base0 && twoP1 === base1)
+      );
+    })();
+
+    // 19. Human assists beyond damage (VS CPU only): stamina regen, momentum, green zone, get-up
+    (function () {
+      var sc = Sim.create({ boxers: ['viper', 'hammer'], seed: 40, vsCpu: true, difficulty: 'easy' });
+      var s2 = Sim.create({ boxers: ['viper', 'hammer'], seed: 40 });
+      sc.fighters[0].st = 10; s2.fighters[0].st = 10;
+      sc.fighters[1].st = 10; s2.fighters[1].st = 10;
+      for (var i = 0; i < 60; i++) { sc = Sim.step(sc, {}, {}); s2 = Sim.step(s2, {}, {}); }
+      var regenHuman = (sc.fighters[0].st - 10) / (s2.fighters[0].st - 10);
+      var regenCpuSame = Math.abs((sc.fighters[1].st - 10) - (s2.fighters[1].st - 10)) < 1e-9;
+      var pc = Sim.kdParams(2, 5, C.ASSIST.easy), pn = Sim.kdParams(2, 5);
+      var getupEasier = pc.drainPerSec < pn.drainPerSec * 0.8 && pc.pressGain > pn.pressGain;
+      // green zone: human zone bigger and cursor slower than the same combo in 2P
+      function comboMeter(opts) {
+        var s = Sim.create(Object.assign({ boxers: ['hammer', 'viper'], seed: 304 }, opts));
+        s.fighters[0].momentum = 100; s.fighters[0].x = -0.35; s.fighters[1].x = 0.35;
+        s = Sim.step(s, { combo: true }, {});
+        for (var j = 0; j < 80 && !(s.comboState && s.comboState.stage === 'meter'); j++) s = Sim.step(s, {}, {});
+        return s.comboState;
+      }
+      var cmA = comboMeter({ vsCpu: true, difficulty: 'easy' }), cmB = comboMeter({});
+      var greenBigger = cmA.greenHalf > cmB.greenHalf * 1.25 && cmA.stageDur > cmB.stageDur * 1.15;
+      // momentum gain
+      function momAfterHit(opts) {
+        var s = Sim.create(Object.assign({ boxers: ['viper', 'hammer'], seed: 905 }, opts));
+        s.fighters[0].x = -0.35; s.fighters[1].x = 0.35;
+        for (var k = 0; k < 40; k++) s = Sim.step(s, { jab: k === 0 }, {});
+        return s.fighters[0].momentum;
+      }
+      var momRatio = momAfterHit({ vsCpu: true, difficulty: 'easy' }) / Math.max(0.001, momAfterHit({}));
+      check(
+        '19. VS CPU Easy human assists: faster stamina regen, more momentum, bigger green zone, easier get-up',
+        regenHuman > 1.2 && regenHuman < 1.3 && regenCpuSame && getupEasier && greenBigger && momRatio > 1.25 && momRatio < 1.35,
+        'regen x' + regenHuman.toFixed(2) + ', momentum x' + momRatio.toFixed(2) + ', green x' + (cmA.greenHalf / cmB.greenHalf).toFixed(2) +
+        ', cursor x' + (cmA.stageDur / cmB.stageDur).toFixed(2)
+      );
+    })();
+
+    // 20. Determinism + fights always resolve in VS CPU mode (bot "human" vs seeded CPU), plus win-rate report
+    (function () {
+      function botFight(seed, cpuDiff, botDiff) {
+        var s = Sim.create({ boxers: ['viper', 'hammer'], seed: seed, vsCpu: true, difficulty: cpuDiff });
+        var bot = AI.create({ index: 0, boxerId: 'viper', difficulty: botDiff, seed: seed + 5 });
+        var cpu = AI.create({ index: 1, boxerId: 'hammer', difficulty: cpuDiff, seed: seed + 9 });
+        for (var i = 0; i < 20000 && s.phase !== 'finished'; i++) {
+          var b = bot.think(s); delete b.cpuDiff;   // the bot plays as a HUMAN (no CPU get-up flag)
+          if (s.count && s.count.who === 0) b.presses = (i % 6 === 0) ? 1 : 0;
+          s = Sim.step(s, b, cpu.think(s));
+        }
+        return s;
+      }
+      var a = JSON.stringify(botFight(11, 'easy', 'normal')), b2 = JSON.stringify(botFight(11, 'easy', 'normal'));
+      var wins = { easy: 0, normal: 0, hard: 0 }, resolved = true, total = 5, ko = 0;
+      ['easy', 'normal', 'hard'].forEach(function (d) {
+        for (var k = 0; k < total; k++) {
+          var f = botFight(200 + k * 17, d, 'normal');
+          if (f.phase !== 'finished' || !f.result) resolved = false;
+          else { if (f.result.winner === 0) wins[d]++; if (f.result.method === 'KO') ko++; }
+        }
+      });
+      check(
+        '20. Same seed gives identical results; every VS CPU fight resolves (KO or decision)',
+        a === b2 && resolved,
+        'avg-player bot wins vs CPU Easy/Medium/Hard: ' + wins.easy + '/' + total + ', ' + wins.normal + '/' + total + ', ' + wins.hard + '/' + total + ' (KO finishes: ' + ko + ')'
+      );
+    })();
     var allPass = results.every(function (r) { return r.pass; });
     console.log('SELF-TEST SUMMARY: ' + (allPass ? 'ALL ' + results.length + ' PASSED' : 'FAILURES DETECTED'));
     showScreen('title');
@@ -1025,10 +1164,10 @@
       panel.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
           '<strong style="color:#ffe27a;font-size:14px;">AUTOMATED SELF-TEST RESULTS (' + (allPass ? 'ALL ' + results.length + ' PASSED' : 'FAILED') + ')</strong>' +
-          '<button id="btn-close-selftest" class="icon-btn" style="padding:2px 8px;font-size:11px;">✕</button>' +
+          '<button id="btn-close-selftest" class="icon-btn" style="padding:2px 8px;font-size:11px;">âœ•</button>' +
         '</div>' +
         results.map(function (r) {
-          return '<div><span class="' + (r.pass ? 'st-pass' : 'st-fail') + '">' + (r.pass ? '✔ PASS' : '✘ FAIL') + '</span> ' +
+          return '<div><span class="' + (r.pass ? 'st-pass' : 'st-fail') + '">' + (r.pass ? 'âœ” PASS' : 'âœ˜ FAIL') + '</span> ' +
             r.name + ' <span style="color:#94a3b8;">(' + r.detail + ')</span></div>';
         }).join('');
       var closeBtn = $('btn-close-selftest');
@@ -1100,7 +1239,7 @@
       Audio.init();
       var next = !Audio.isMuted();
       Audio.setMuted(next);
-      $('btn-sound').textContent = next ? '🔇 MUTE' : '🔊 SFX';
+      $('btn-sound').textContent = next ? 'ðŸ”‡ MUTE' : 'ðŸ”Š SFX';
     });
 
     $('btn-enter').addEventListener('click', function () {
@@ -1124,9 +1263,13 @@
       });
     });
 
+    Array.prototype.forEach.call($('seg-diff').querySelectorAll('button'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-diff') === app.difficulty);
+    });
     Array.prototype.forEach.call($('seg-diff').querySelectorAll('button'), function (btn) {
       btn.addEventListener('click', function () {
         app.difficulty = btn.getAttribute('data-diff');
+        saveDifficulty(app.difficulty);
         Array.prototype.forEach.call($('seg-diff').querySelectorAll('button'), function (b) {
           b.classList.toggle('active', b === btn);
         });
@@ -1189,3 +1332,5 @@
     getState: function () { return app; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
+
+

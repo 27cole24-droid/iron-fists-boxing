@@ -36,7 +36,7 @@
     };
   }
 
-  function makeFighter(idx, b, x, priorKOs) {
+  function makeFighter(idx, b, x, priorKOs, assist) {
     var p = derive(b);
     var pKOs = Math.max(0, priorKOs | 0);
     var initKdLevel = pKOs * (C.KNOCKDOWN.priorKoLevelPenalty || 1);
@@ -50,28 +50,33 @@
       kv: 0, dodgeCd: 0, dodgeDir: -1, ifEnd: 0, counterT: 0, hitType: null,
       comboN: 0, comboT: 0, repeatN: 0, lastType: null,
       buffer: null, bufT: 0, gassedT: 0, pm: 0,
-      kd: 0, kdTot: 0, kdLevel: initKdLevel, priorKOs: pKOs, getup: 0, invulnT: 0,
+      kd: 0, kdTot: 0, kdLevel: initKdLevel, priorKOs: pKOs, getup: 0, invulnT: 0, assist: assist || null,
       dmgR: 0, cleanR: 0, dmg: 0, landedN: 0, thrownN: 0
     };
   }
 
-  function kdParams(level, chin) {
+  function kdParams(level, chin, assist) {
     var K = C.KNOCKDOWN;
-    var lvl = clamp(level | 0, 0, K.maxLevelCap);
+    var lvl = clamp(level | 0, 0, K.maxLevelCap) * (assist ? assist.getupRamp : 1);
     var pressGain = Math.max(K.minPressGain, K.basePressGain * Math.pow(1 - K.pressShrinkPerKd, lvl));
     var chinMul = Math.max(0.5, 1 - ((chin || 5) - 5) * K.chinDrainFactor);
     var drainPerSec = Math.min(K.maxDrainPerSec, K.baseDrainPerSec * Math.pow(K.drainMultPerKd, lvl) * chinMul);
+    if (assist) { pressGain *= assist.getupGainMul; drainPerSec *= assist.getupDrainMul; }
     return { level: lvl, pressGain: pressGain, drainPerSec: drainPerSec };
   }
 
   function create(opts) {
     var b0 = g.Boxers.byId(opts.boxers[0]), b1 = g.Boxers.byId(opts.boxers[1]);
     var pKOs = opts.priorKOs || [0, 0];
+    // VS CPU mode: Player 1 (human) gets small assists from Config.ASSIST[difficulty]; Local 2P gets none.
+    var cpuDiff = opts.vsCpu ? (C.ASSIST[opts.difficulty] ? opts.difficulty : 'easy') : null;
+    var humanAssist = cpuDiff ? C.ASSIST[cpuDiff] : null;
     var s = {
       tick: 0, rng: (opts.seed | 0) || 1, phase: 'fight', phaseT: 0, round: 1,
       clock: C.ROUND_SECONDS * C.FPS,
-      fighters: [makeFighter(0, b0, -C.START_X, pKOs[0]), makeFighter(1, b1, C.START_X, pKOs[1])],
+      fighters: [makeFighter(0, b0, -C.START_X, pKOs[0], humanAssist), makeFighter(1, b1, C.START_X, pKOs[1], null)],
       count: null, comboState: null, hitstop: 0, slowmo: 0, timeScale: 1,
+      cpuMode: cpuDiff ? { human: 0, diff: cpuDiff } : null,
       events: [], rounds: [], result: null, boxers: [b0.id, b1.id]
     };
     s.events.push({ type: 'round_start', round: 1 });
@@ -128,6 +133,7 @@
     // Momentum does not grow while a boxer is knocked down, and opponent's momentum never changes during a combo
     if (n.comboState && f.idx !== n.comboState.attacker) return;
     if (delta > 0 && (n.count || f.action === 'knockdown' || f.action === 'getup')) return;
+    if (delta > 0 && f.assist) delta *= f.assist.momentumMul;
     var prev = f.momentum;
     f.momentum = clamp(f.momentum + delta, 0, C.MOMENTUM.max);
     if (prev < C.MOMENTUM.max && f.momentum >= C.MOMENTUM.max) {
@@ -321,7 +327,7 @@
     // Stamina regeneration (only when free)
     if (isFree(f.action) && f.gassedT === 0 && !n.comboState) {
       var mul = f.action === 'block' ? C.REGEN_BLOCK_MUL : (f.dir !== 0 ? C.REGEN_MOVE_MUL : 1);
-      f.st = Math.min(f.maxSt, f.st + f.p.regen * mul * C.DT);
+      f.st = Math.min(f.maxSt, f.st + f.p.regen * mul * C.DT * (f.assist ? f.assist.regenMul : 1));
     }
   }
 
@@ -410,7 +416,7 @@
     f.dodgeDir = (dir * f.facing > 0) ? 1 : -1;
     f.action = 'dodge'; f.t = 0; f.dur = D.dur; f.dir = 0;
     f.dodgeCd = Math.round(D.cooldown * f.p.t.dodgeCdMul);
-    f.ifEnd = D.iEnd + f.p.t.iBonus;
+    f.ifEnd = D.iEnd + f.p.t.iBonus + (f.assist ? f.assist.dodgeIFrameBonus : 0);
     emit(n, 'dodge_start', { who: f.idx, dir: f.dodgeDir });
   }
 
@@ -508,6 +514,13 @@
     cs.greenCenter = CM.greenCenter;
     cs.greenHalf = CM.greenHalfWidth * (h.greenMul || 1) * Math.pow(CM.greenShrinkPerHit, idx);
     cs.goodHalf = Math.max(cs.greenHalf + 0.055, CM.goodHalfWidth * Math.pow(CM.greenShrinkPerHit, idx * 0.6));
+    // VS CPU assist: the human's green/good zones are larger and the cursor sweeps slower
+    var atkAssist = n.fighters[cs.attacker].assist;
+    if (atkAssist) {
+      cs.greenHalf *= atkAssist.greenZoneMul;
+      cs.goodHalf *= atkAssist.greenZoneMul;
+      cs.stageDur = Math.round(cs.stageDur * atkAssist.cursorSlow);
+    }
     cs.bufferedTimingPress = false;
     cs.cpuTargetPos = null;
 
@@ -694,7 +707,7 @@
     cs.stageDur = CM.strikeFrames + (h.finisher ? 6 : 0);
 
     var mult = cs.grade === 'green' ? CM.greenMult : (cs.grade === 'good' ? CM.goodMult : CM.missMult);
-    var dmg = h.damage * a.p.power * mult * d.p.takeMul;
+    var dmg = h.damage * a.p.power * mult * d.p.takeMul * (a.assist ? a.assist.dmgDealt : 1) * (d.assist ? d.assist.dmgTaken : 1);
 
     if (cs.grade === 'green') {
       cs.greenCount++;
@@ -754,7 +767,7 @@
       inv: (f.action === 'dodge' && f.t > C.DODGE.iStart && f.t <= f.ifEnd) || f.invulnT > 0 || f.action === 'getup' || f.action === 'knockdown',
       dodgeInv: f.action === 'dodge' && f.t > C.DODGE.iStart && f.t <= f.ifEnd,
       blocking: f.action === 'block' && f.t >= C.BLOCK.raise,
-      perfectBlock: f.action === 'block' && f.t >= C.BLOCK.raise && f.t <= C.BLOCK.raise + C.BLOCK.perfectWindow
+      perfectBlock: f.action === 'block' && f.t >= C.BLOCK.raise && f.t <= C.BLOCK.raise + C.BLOCK.perfectWindow + (f.assist ? f.assist.perfectBlockBonus : 0)
     };
   }
 
@@ -767,8 +780,10 @@
       var a = n.fighters[i], d = n.fighters[1 - i], D = pre[1 - i];
       var P = C.PUNCH[A.type];
       var dist = Math.abs(A.x - D.x);
-      var range = P.range * a.p.reach;
+      var range = P.range * a.p.reach + (a.assist ? a.assist.hitRangeBonus : 0);
       if (dist > range) continue;
+      // VS CPU assists: human damage dealt / taken multipliers (1.0 for the CPU and in Local 2P)
+      var assistMul = (a.assist ? a.assist.dmgDealt : 1) * (d.assist ? d.assist.dmgTaken : 1);
       a.hitDone = true;
       var impactX = D.x - a.facing * 0.12;
 
@@ -786,7 +801,7 @@
       }
 
       var rm = dist <= P.close ? 1 : 1 - (1 - P.minMul) * Math.min(1, (dist - P.close) / Math.max(0.01, range - P.close));
-      var base = P.damage * a.atkPower * rm * (1 + (R.next(n) - 0.5) * 0.1);
+      var base = P.damage * a.atkPower * rm * (1 + (R.next(n) - 0.5) * 0.1) * assistMul;
 
       // blocked
       if (D.blocking) {
@@ -904,7 +919,7 @@
     calmFighter(a);
     setIdle(a);
     var lvl = Math.max(0, d.kdLevel - 1);
-    var params = kdParams(lvl, d.p.chin);
+    var params = kdParams(lvl, d.p.chin, d.assist);
     emit(n, 'knockdown', {
       who: d.idx, by: a.idx, n: d.kd, kdTot: d.kdTot, level: lvl,
       pressGain: params.pressGain, drainPerSec: params.drainPerSec, x: d.x
@@ -922,7 +937,7 @@
     var cn = n.count, d = n.fighters[cn.who], o = n.fighters[1 - cn.who], inp = ins[cn.who];
     var K = C.KNOCKDOWN;
     var lvl = cn.level || 0;
-    var params = kdParams(lvl, d.p.chin);
+    var params = kdParams(lvl, d.p.chin, d.assist);
 
     if (d.kv !== 0) { d.x += -d.facing * d.kv; d.kv *= 0.85; if (Math.abs(d.kv) < 0.0004) d.kv = 0; }
     d.t++;
@@ -1179,3 +1194,4 @@
     kdParams: kdParams
   };
 })(typeof window !== 'undefined' ? window : globalThis);
+
