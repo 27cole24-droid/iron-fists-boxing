@@ -1,4 +1,4 @@
-﻿/* ai.js - CPU opponent. Produces the same plain input objects as a human.
+/* ai.js - CPU opponent. Produces the same plain input objects as a human.
  * It only uses OBSERVABLE state (positions, actions, animation progress, health/stamina/momentum bars).
  * Opponent information is read through a delay buffer (reaction time); it never sees the
  * opponent's current input.

@@ -1,4 +1,4 @@
-﻿/* main.js - UI screens, renderer switching, fixed-timestep accumulator loop, debug overlay, and self-test. */
+/* main.js - UI screens, renderer switching, fixed-timestep accumulator loop, debug overlay, and self-test. */
 (function (g) {
   'use strict';
   var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio;
@@ -178,7 +178,7 @@
   }
 
   function renderSelectScreen() {
-    $('p2-corner-tag').textContent = app.vsMode === '2p' ? 'BLUE CORNER â€¢ P2' : 'BLUE CORNER â€¢ CPU';
+    $('p2-corner-tag').textContent = app.vsMode === '2p' ? 'BLUE CORNER • P2' : 'BLUE CORNER • CPU';
     $('seg-diff').style.display = app.vsMode === 'cpu' ? 'inline-flex' : 'none';
     buildRosterStrip(0);
     buildRosterStrip(1);
@@ -213,11 +213,11 @@
     $('hud-name-1').textContent = B1.name + (app.vsMode === '2p' ? ' (P2)' : ' (CPU)');
 
     $('hud-controls-hint').innerHTML = app.vsMode === '2p'
-      ? '<strong>P1:</strong> A/D Move Â· J Jab Â· K Hook Â· L Uppercut Â· S Block Â· W/Space Dodge Â· <strong>E Combo</strong> &nbsp;|&nbsp; <strong>P2:</strong> â†/â†’ Move Â· 1/, Jab Â· 2/. Hook Â· 3// Upper Â· â†“/0 Block Â· â†‘/Enter Dodge Â· <strong>I Combo</strong>'
-      : '<strong>Move:</strong> A/D or â†/â†’ &nbsp;â€¢&nbsp; <strong>Jab:</strong> J &nbsp;â€¢&nbsp; <strong>Hook:</strong> K &nbsp;â€¢&nbsp; <strong>Uppercut:</strong> L &nbsp;â€¢&nbsp; <strong>Block:</strong> S &nbsp;â€¢&nbsp; <strong>Dodge:</strong> W/Space &nbsp;â€¢&nbsp; <strong>Signature Combo:</strong> E';
+      ? '<strong>P1:</strong> A/D Move · J Jab · K Hook · L Uppercut · S Block · W/Space Dodge · <strong>E Combo</strong> &nbsp;|&nbsp; <strong>P2:</strong> ←/→ Move · 1/, Jab · 2/. Hook · 3// Upper · ↓/0 Block · ↑/Enter Dodge · <strong>I Combo</strong>'
+      : '<strong>Move:</strong> A/D or ←/→ &nbsp;•&nbsp; <strong>Jab:</strong> J &nbsp;•&nbsp; <strong>Hook:</strong> K &nbsp;•&nbsp; <strong>Uppercut:</strong> L &nbsp;•&nbsp; <strong>Block:</strong> S &nbsp;•&nbsp; <strong>Dodge:</strong> W/Space &nbsp;•&nbsp; <strong>Signature Combo:</strong> E';
 
     showScreen('fight');
-    showBanner('ROUND 1 â€” FIGHT!', 1.4);
+    showBanner('ROUND 1 — FIGHT!', 1.4);
     if (Audio && app.simState.events.length) Audio.handle(app.simState.events);
     updateHUD(app.simState);
   }
@@ -241,14 +241,14 @@
         showBanner('FIGHT!', 1.0);
       } else if (e.type === 'combo_start') {
         app.comboGrades = [];
-        showBanner('COMBO! â€” ' + e.name.toUpperCase(), 1.15);
+        showBanner('COMBO! — ' + e.name.toUpperCase(), 1.15);
       } else if (e.type === 'combo_too_far') {
         showBanner('TOO FAR!', 0.65);
       } else if (e.type === 'combo_hit') {
         app.comboGrades[e.hitIndex] = e.grade;
       } else if (e.type === 'combo_end') {
         if (e.instantKO) {
-          showBanner('GREEN COMBO â€” KNOCKOUT!', 2.6);
+          showBanner('GREEN COMBO — KNOCKOUT!', 2.6);
         } else if (e.greenCount === e.totalHits && !e.broken) {
           showBanner('PERFECT COMBO! ' + e.greenCount + '/' + e.totalHits + ' GREEN!', 1.3);
         }
@@ -302,15 +302,15 @@
       if (momShell) momShell.classList.toggle('ready', momReady);
       if (momLbl) {
         var sigName = Boxers.byId(f.bid).signatureCombo ? Boxers.byId(f.bid).signatureCombo.name.toUpperCase() : 'COMBO';
-        momLbl.textContent = momReady ? ('COMBO READY â€” ' + sigName) : ('COMBO ' + Math.floor(momPct) + '%');
+        momLbl.textContent = momReady ? ('COMBO READY — ' + sigName) : ('COMBO ' + Math.floor(momPct) + '%');
       }
       if (momReadyPill) {
         var showReady = momReady && !s.comboState && !s.count && s.phase === 'fight';
         momReadyPill.classList.toggle('show', showReady);
         if (i === 0) {
-          momReadyPill.textContent = 'âš¡ COMBO READY! PRESS [E]';
+          momReadyPill.textContent = '⚡ COMBO READY! PRESS [E]';
         } else {
-          momReadyPill.textContent = app.vsMode === '2p' ? 'âš¡ COMBO READY! PRESS [I]' : 'âš¡ CPU COMBO READY!';
+          momReadyPill.textContent = app.vsMode === '2p' ? '⚡ COMBO READY! PRESS [I]' : '⚡ CPU COMBO READY!';
         }
       }
 
@@ -318,8 +318,8 @@
       var kdBadge = $('hud-kd-' + i);
       if (kdBadge) {
         var tot = f.kdTot + (f.priorKOs || 0);
-        var skulls = tot === 0 ? '' : (tot >= 3 ? 'ðŸ’€Ã—' + tot + ' ' : 'ðŸ’¥Ã—' + tot + ' ');
-        var koSuffix = f.priorKOs > 0 ? (' â€¢ KO: ' + f.priorKOs) : '';
+        var skulls = tot === 0 ? '' : (tot >= 3 ? '💀×' + tot + ' ' : '💥×' + tot + ' ');
+        var koSuffix = f.priorKOs > 0 ? (' • KO: ' + f.priorKOs) : '';
         kdBadge.textContent = skulls + 'KD: ' + f.kdTot + koSuffix;
         kdBadge.className = 'kd-badge' +
           (tot >= 3 ? ' kd-danger' : (tot === 2 ? ' kd-orange' : (tot === 1 ? ' kd-warn' : '')));
@@ -350,7 +350,7 @@
         var cs = s.comboState;
         cmBox.classList.add('show');
         $('cm-sig-name').textContent = cs.name.toUpperCase();
-        $('cm-hit-info').textContent = 'HIT ' + (cs.hitIndex + 1) + ' / ' + cs.totalHits + ' â€” ' + cs.hitLabel + ' (' + cs.punchType.toUpperCase() + ')';
+        $('cm-hit-info').textContent = 'HIT ' + (cs.hitIndex + 1) + ' / ' + cs.totalHits + ' — ' + cs.hitLabel + ' (' + cs.punchType.toUpperCase() + ')';
 
         var pipsEl = $('cm-pips');
         if (pipsEl) {
@@ -409,7 +409,7 @@
       var pct = Math.max(0, Math.min(100, Math.round((downed.getup / C.KNOCKDOWN.meterMax) * 100)));
 
       countBox.classList.add('show');
-      $('count-who').textContent = Boxers.byId(downed.bid).name.toUpperCase() + ' â€” KNOCKDOWN #' + downed.kdTot;
+      $('count-who').textContent = Boxers.byId(downed.bid).name.toUpperCase() + ' — KNOCKDOWN #' + downed.kdTot;
 
       var priorKoStr = downed.priorKOs > 0 ? (' + ' + downed.priorKOs + ' PRIOR KO' + (downed.priorKOs > 1 ? 'S' : '')) : '';
       var diffLabels = [
@@ -447,10 +447,10 @@
     var restBox = $('hud-rest');
     if (s.phase === 'rest') {
       restBox.classList.add('show');
-      $('rest-title').textContent = 'CORNER REST â€” AFTER ROUND ' + s.round;
+      $('rest-title').textContent = 'CORNER REST — AFTER ROUND ' + s.round;
       var card = app.lastRoundCard || [10, 10];
       var b0 = Boxers.byId(s.boxers[0]).nick, b1 = Boxers.byId(s.boxers[1]).nick;
-      $('rest-card').textContent = 'Unofficial Round Score: ' + b0 + ' ' + card[0] + ' â€” ' + card[1] + ' ' + b1;
+      $('rest-card').textContent = 'Unofficial Round Score: ' + b0 + ' ' + card[0] + ' — ' + card[1] + ' ' + b1;
       var rem = Math.max(0, Math.ceil((C.REST_SECONDS * C.FPS - s.phaseT) / C.FPS));
       $('rest-clock').textContent = 'Next Round in ' + rem + 's';
     } else {
@@ -472,7 +472,7 @@
     var timeStr = m + ':' + (r < 10 ? '0' + r : r);
     $('res-sub').textContent = res.method === 'Decision'
       ? (res.detail + ' (' + corner + ')')
-      : ('Winner by ' + res.method + ' (10-Count) in Round ' + res.round + ' (' + timeStr + ') â€¢ ' + corner);
+      : ('Winner by ' + res.method + ' (10-Count) in Round ' + res.round + ' (' + timeStr + ') • ' + corner);
 
     var B0 = Boxers.byId(s.boxers[0]), B1 = Boxers.byId(s.boxers[1]);
     var cardsWrap = $('res-cards-wrap');
@@ -529,7 +529,7 @@
       var bufStr = f.buffer ? (f.buffer + ' (' + f.bufT + 'f)') : 'none';
       var momStr = f.momentum.toFixed(1) + '/' + C.MOMENTUM.max + (f.momentum >= C.MOMENTUM.max ? ' [READY]' : '');
       return '<div class="dbg-col">' +
-        '<div class="dbg-title">FIGHTER ' + (idx + 1) + ' (' + f.bid.toUpperCase() + ') â€” Source: ' + src + '</div>' +
+        '<div class="dbg-title">FIGHTER ' + (idx + 1) + ' (' + f.bid.toUpperCase() + ') — Source: ' + src + '</div>' +
         '<div>Raw Held Keys: <strong>' + (rawKeys.length ? rawKeys.join(', ') : 'none') + '</strong></div>' +
         '<div>Step Input: ' + formatInputFlags(stepInp) + '</div>' +
         '<div>Action: <strong>' + f.action + '</strong> | Frame: ' + f.t + '/' + f.dur + ' | Prog: ' + f.prog.toFixed(2) + '</div>' +
@@ -543,7 +543,7 @@
       : '';
 
     el.innerHTML =
-      '<div><strong>DEBUG OVERLAY</strong> (Toggle: <span class="kbd">`</span> or <span class="kbd">F3</span>) â€” Tick: ' + s.tick + ' | Phase: ' + s.phase + ' | Hitstop: ' + s.hitstop + csInfo + '</div>' +
+      '<div><strong>DEBUG OVERLAY</strong> (Toggle: <span class="kbd">`</span> or <span class="kbd">F3</span>) — Tick: ' + s.tick + ' | Phase: ' + s.phase + ' | Hitstop: ' + s.hitstop + csInfo + '</div>' +
       '<div class="dbg-grid">' +
         colHTML(0, src0, src0 === 'human' ? dbgIn.p1Keys : ['(CPU AI)'], app.lastStepInputs[0]) +
         colHTML(1, src1, src1 === 'human' ? dbgIn.p2Keys : ['(CPU AI)'], app.lastStepInputs[1]) +
@@ -637,7 +637,7 @@
     var results = [];
     function check(name, pass, detail) {
       results.push({ name: name, pass: !!pass, detail: detail || '' });
-      console.log((pass ? '[PASS] ' : '[FAIL] ') + name + (detail ? ' â€” ' + detail : ''));
+      console.log((pass ? '[PASS] ' : '[FAIL] ') + name + (detail ? ' — ' + detail : ''));
     }
 
     // 1. Idle 5s: position never changes & no punch thrown
@@ -1164,10 +1164,10 @@
       panel.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
           '<strong style="color:#ffe27a;font-size:14px;">AUTOMATED SELF-TEST RESULTS (' + (allPass ? 'ALL ' + results.length + ' PASSED' : 'FAILED') + ')</strong>' +
-          '<button id="btn-close-selftest" class="icon-btn" style="padding:2px 8px;font-size:11px;">âœ•</button>' +
+          '<button id="btn-close-selftest" class="icon-btn" style="padding:2px 8px;font-size:11px;">✕</button>' +
         '</div>' +
         results.map(function (r) {
-          return '<div><span class="' + (r.pass ? 'st-pass' : 'st-fail') + '">' + (r.pass ? 'âœ” PASS' : 'âœ˜ FAIL') + '</span> ' +
+          return '<div><span class="' + (r.pass ? 'st-pass' : 'st-fail') + '">' + (r.pass ? '✔ PASS' : '✘ FAIL') + '</span> ' +
             r.name + ' <span style="color:#94a3b8;">(' + r.detail + ')</span></div>';
         }).join('');
       var closeBtn = $('btn-close-selftest');
@@ -1239,7 +1239,7 @@
       Audio.init();
       var next = !Audio.isMuted();
       Audio.setMuted(next);
-      $('btn-sound').textContent = next ? 'ðŸ”‡ MUTE' : 'ðŸ”Š SFX';
+      $('btn-sound').textContent = next ? '🔇 MUTE' : '🔊 SFX';
     });
 
     $('btn-enter').addEventListener('click', function () {

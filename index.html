@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>IRON FISTS â€” Championship Boxing</title>
+  <title>IRON FISTS — Championship Boxing</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -21,8 +21,8 @@
         <button id="btn-mode-2d" class="active" data-renderer="2d">2D RING</button>
         <button id="btn-mode-3d" data-renderer="3d" disabled>3D <span class="soon-tag">Coming Soon</span></button>
       </div>
-      <button id="btn-fullscreen" class="icon-btn" title="Fullscreen">â›¶</button>
-      <button id="btn-sound" class="icon-btn" title="Toggle Sound">ðŸ”Š SFX</button>
+      <button id="btn-fullscreen" class="icon-btn" title="Fullscreen">⛶</button>
+      <button id="btn-sound" class="icon-btn" title="Toggle Sound">🔊 SFX</button>
     </div>
 
     <!-- 1. TITLE SCREEN -->
@@ -30,15 +30,15 @@
       <div class="title-card interactive">
         <div class="title-eyebrow">World Championship Boxing</div>
         <h1 class="title-logo">IRON FISTS</h1>
-        <p class="title-sub">Precision Spacing â€¢ Stamina Chess â€¢ Counter-Punch Knockouts</p>
+        <p class="title-sub">Precision Spacing • Stamina Chess • Counter-Punch Knockouts</p>
         <div class="title-actions">
           <button id="btn-enter" class="btn-primary">ENTER THE RING</button>
           <button id="btn-how" class="btn-secondary">CONTROLS &amp; RULES</button>
         </div>
         <div class="title-controls-mini">
           <span><strong>P1 Move:</strong> <span class="kbd">A</span><span class="kbd">D</span></span>
-          <span><strong>Punches:</strong> <span class="kbd">J</span> Jab Â· <span class="kbd">K</span> Hook Â· <span class="kbd">L</span> Uppercut</span>
-          <span><strong>Defense:</strong> <span class="kbd">S</span> Block Â· <span class="kbd">W</span> / <span class="kbd">Space</span> Dodge</span>
+          <span><strong>Punches:</strong> <span class="kbd">J</span> Jab · <span class="kbd">K</span> Hook · <span class="kbd">L</span> Uppercut</span>
+          <span><strong>Defense:</strong> <span class="kbd">S</span> Block · <span class="kbd">W</span> / <span class="kbd">Space</span> Dodge</span>
           <span><strong>Signature Combo:</strong> <span class="kbd">E</span> (P2: <span class="kbd">I</span>)</span>
         </div>
       </div>
@@ -67,14 +67,14 @@
           <div>
             <div class="fp-top">
               <div class="preview-wrap">
-                <span class="corner-tag">RED CORNER â€¢ P1</span>
+                <span class="corner-tag">RED CORNER • P1</span>
                 <canvas id="preview-p1" width="220" height="240"></canvas>
               </div>
               <div class="fp-meta">
                 <div class="flag-row">
                   <span id="p1-flag" class="flag-swatch"></span>
                   <span id="p1-country"></span>
-                  <span>â€¢</span>
+                  <span>•</span>
                   <span id="p1-style"></span>
                 </div>
                 <div id="p1-name" class="fp-name"></div>
@@ -90,7 +90,7 @@
         <!-- VS Pillar -->
         <div class="vs-pillar">
           <div class="vs-badge">VS</div>
-          <button id="btn-random" class="btn-secondary" style="padding:8px 12px;font-size:11px;">ðŸŽ² RANDOM</button>
+          <button id="btn-random" class="btn-secondary" style="padding:8px 12px;font-size:11px;">🎲 RANDOM</button>
         </div>
 
         <!-- Player 2 / CPU Card -->
@@ -98,14 +98,14 @@
           <div>
             <div class="fp-top">
               <div class="preview-wrap">
-                <span id="p2-corner-tag" class="corner-tag">BLUE CORNER â€¢ CPU</span>
+                <span id="p2-corner-tag" class="corner-tag">BLUE CORNER • CPU</span>
                 <canvas id="preview-p2" width="220" height="240"></canvas>
               </div>
               <div class="fp-meta">
                 <div class="flag-row">
                   <span id="p2-flag" class="flag-swatch"></span>
                   <span id="p2-country"></span>
-                  <span>â€¢</span>
+                  <span>•</span>
                   <span id="p2-style"></span>
                 </div>
                 <div id="p2-name" class="fp-name"></div>
@@ -120,8 +120,8 @@
       </div>
 
       <footer class="select-footer interactive">
-        <button id="btn-select-back" class="btn-secondary">â† TITLE</button>
-        <button id="btn-start-fight" class="btn-primary">START FIGHT ðŸ””</button>
+        <button id="btn-select-back" class="btn-secondary">← TITLE</button>
+        <button id="btn-start-fight" class="btn-primary">START FIGHT 🔔</button>
       </footer>
     </section>
 
@@ -147,7 +147,7 @@
               <div id="hud-mom-0" class="mom-fill" style="width:0%"></div>
               <span id="hud-mom-lbl-0" class="mom-lbl">COMBO 0%</span>
             </div>
-            <div id="hud-mom-ready-0" class="mom-ready-pill">âš¡ COMBO READY! PRESS [E]</div>
+            <div id="hud-mom-ready-0" class="mom-ready-pill">⚡ COMBO READY! PRESS [E]</div>
           </div>
           <div id="hud-combo-0" class="combo-pill"></div>
         </div>
@@ -157,7 +157,7 @@
           <div id="hud-round" class="hud-round">ROUND 1 / 3</div>
           <div id="hud-clock" class="hud-clock">0:30</div>
           <div class="hud-mini-btns">
-            <button id="btn-pause" title="Pause (Esc / P)">âšâš PAUSE</button>
+            <button id="btn-pause" title="Pause (Esc / P)">❚❚ PAUSE</button>
           </div>
         </div>
 
@@ -180,7 +180,7 @@
               <div id="hud-mom-1" class="mom-fill" style="width:0%"></div>
               <span id="hud-mom-lbl-1" class="mom-lbl">COMBO 0%</span>
             </div>
-            <div id="hud-mom-ready-1" class="mom-ready-pill">âš¡ COMBO READY! PRESS [I]</div>
+            <div id="hud-mom-ready-1" class="mom-ready-pill">⚡ COMBO READY! PRESS [I]</div>
           </div>
           <div id="hud-combo-1" class="combo-pill"></div>
         </div>
@@ -192,7 +192,7 @@
       <!-- NBA 2K-Style Signature Combo Timing Meter Overlay -->
       <div id="hud-combo-meter">
         <div id="cm-sig-name" class="cm-sig-name">SIGNATURE COMBO</div>
-        <div id="cm-hit-info" class="cm-hit-info">HIT 1 / 4 â€” JAB</div>
+        <div id="cm-hit-info" class="cm-hit-info">HIT 1 / 4 — JAB</div>
         <div id="cm-pips" class="cm-pips"></div>
         <div id="cm-track" class="cm-track">
           <div id="cm-zone-good" class="cm-zone-good"></div>
@@ -222,15 +222,15 @@
         <div id="rest-card" class="rest-card">10 - 9</div>
         <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">Cornermen restoring health &amp; stamina...</div>
         <div id="rest-clock" class="rest-clock">10s</div>
-        <button id="btn-skip-rest" class="btn-secondary" style="padding:7px 16px;font-size:12px;">NEXT ROUND â†’</button>
+        <button id="btn-skip-rest" class="btn-secondary" style="padding:7px 16px;font-size:12px;">NEXT ROUND →</button>
       </div>
 
       <!-- Bottom Touch Pad + Key Hints -->
       <div class="hud-bottom">
         <div id="touch-controls" class="touch-row">
           <div class="touch-cluster">
-            <button class="t-btn" data-action="left">â—€<span class="sub">BACK</span></button>
-            <button class="t-btn" data-action="right">â–¶<span class="sub">STEP</span></button>
+            <button class="t-btn" data-action="left">◀<span class="sub">BACK</span></button>
+            <button class="t-btn" data-action="right">▶<span class="sub">STEP</span></button>
             <button class="t-btn" data-action="dodge">DODGE<span class="sub">W / SPC</span></button>
             <button class="t-btn" data-action="block">BLOCK<span class="sub">S</span></button>
           </div>
@@ -263,27 +263,27 @@
     <div id="modal-how" class="modal-backdrop interactive">
       <div class="modal-box" style="text-align:left;">
         <div class="modal-title" style="text-align:center;">CONTROLS &amp; FIGHT SCIENCE</div>
-        <p class="modal-sub" style="text-align:center;">3 Rounds Ã— 30 Seconds â€¢ Win by 10-Count KO or Judges' Decision</p>
+        <p class="modal-sub" style="text-align:center;">3 Rounds × 30 Seconds • Win by 10-Count KO or Judges' Decision</p>
         <table class="score-table">
           <thead>
             <tr><th>Action</th><th>Player 1</th><th>Player 2 (Local 2P)</th></tr>
           </thead>
           <tbody>
-            <tr><td>Move Left / Right</td><td><span class="kbd">A</span> / <span class="kbd">D</span> (or Arrows in 1P)</td><td><span class="kbd">â†</span> / <span class="kbd">â†’</span></td></tr>
+            <tr><td>Move Left / Right</td><td><span class="kbd">A</span> / <span class="kbd">D</span> (or Arrows in 1P)</td><td><span class="kbd">←</span> / <span class="kbd">→</span></td></tr>
             <tr><td>Jab (Fast, long range)</td><td><span class="kbd">J</span> or <span class="kbd">Z</span></td><td><span class="kbd">Num 1</span> / <span class="kbd">1</span> / <span class="kbd">,</span></td></tr>
             <tr><td>Hook (Medium, solid power)</td><td><span class="kbd">K</span> or <span class="kbd">X</span></td><td><span class="kbd">Num 2</span> / <span class="kbd">2</span> / <span class="kbd">.</span></td></tr>
             <tr><td>Uppercut (Close range bomb)</td><td><span class="kbd">L</span> or <span class="kbd">C</span></td><td><span class="kbd">Num 3</span> / <span class="kbd">3</span> / <span class="kbd">/</span></td></tr>
-            <tr><td>Block (Hold to guard)</td><td><span class="kbd">S</span> or <span class="kbd">L-Shift</span></td><td><span class="kbd">â†“</span> / <span class="kbd">Num 0</span> / <span class="kbd">R-Shift</span></td></tr>
-            <tr><td>Dodge / Slip (i-frames)</td><td><span class="kbd">W</span> or <span class="kbd">Space</span></td><td><span class="kbd">â†‘</span> / <span class="kbd">Num 4</span> / <span class="kbd">Enter</span></td></tr>
+            <tr><td>Block (Hold to guard)</td><td><span class="kbd">S</span> or <span class="kbd">L-Shift</span></td><td><span class="kbd">↓</span> / <span class="kbd">Num 0</span> / <span class="kbd">R-Shift</span></td></tr>
+            <tr><td>Dodge / Slip (i-frames)</td><td><span class="kbd">W</span> or <span class="kbd">Space</span></td><td><span class="kbd">↑</span> / <span class="kbd">Num 4</span> / <span class="kbd">Enter</span></td></tr>
             <tr><td>Signature Combo Move</td><td><span class="kbd">E</span> (when Combo Meter FULL)</td><td><span class="kbd">I</span> (when Combo Meter FULL)</td></tr>
             <tr><td>Beat the 10-Count</td><td colspan="2">Rapidly mash any of your punch or movement keys!</td></tr>
           </tbody>
         </table>
         <ul style="font-size:12px;color:#cbd5e1;line-height:1.55;padding-left:18px;margin-top:8px;">
-          <li><strong>Combo Meter &amp; Green Timing KO:</strong> Clean punches, chains, counters, and knockdowns build your <strong>Combo Meter</strong>. At 100% (READY), press <span class="kbd">E</span> (P1) or <span class="kbd">I</span> (P2) in range to launch your Signature Combo â€” if you <strong>GREEN</strong> the combo on the timing meter, it is an <strong>INSTANT KNOCKOUT!</strong></li>
+          <li><strong>Combo Meter &amp; Green Timing KO:</strong> Clean punches, chains, counters, and knockdowns build your <strong>Combo Meter</strong>. At 100% (READY), press <span class="kbd">E</span> (P1) or <span class="kbd">I</span> (P2) in range to launch your Signature Combo — if you <strong>GREEN</strong> the combo on the timing meter, it is an <strong>INSTANT KNOCKOUT!</strong></li>
           <li><strong>Range &amp; Whiffs:</strong> Missing a punch adds recovery frames and leaves you wide open for bonus damage.</li>
           <li><strong>Dodge Counter &amp; Perfect Block:</strong> Timing a dodge or tapping block right as a punch lands grants a counter bonus and big Momentum gain.</li>
-          <li><strong>Stamina Management:</strong> Low stamina slows punches and cuts power. Blocking drains stamina when struck â€” hit zero while blocking and your guard breaks!</li>
+          <li><strong>Stamina Management:</strong> Low stamina slows punches and cuts power. Blocking drains stamina when struck — hit zero while blocking and your guard breaks!</li>
         </ul>
         <div class="modal-actions">
           <button id="btn-how-close" class="btn-primary">GOT IT</button>
@@ -295,11 +295,11 @@
     <div id="modal-result" class="modal-backdrop interactive">
       <div class="modal-box">
         <div id="res-headline" class="modal-title">WINNER!</div>
-        <div id="res-sub" class="modal-sub">KO â€” Round 2</div>
+        <div id="res-sub" class="modal-sub">KO — Round 2</div>
         <div id="res-cards-wrap"></div>
         <table class="score-table" id="res-stats-table"></table>
         <div class="modal-actions">
-          <button id="btn-rematch" class="btn-primary">REMATCH ðŸ””</button>
+          <button id="btn-rematch" class="btn-primary">REMATCH 🔔</button>
           <button id="btn-res-select" class="btn-secondary">CHANGE BOXERS</button>
           <button id="btn-res-title" class="btn-secondary">TITLE SCREEN</button>
         </div>

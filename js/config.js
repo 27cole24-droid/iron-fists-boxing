@@ -1,4 +1,4 @@
-﻿/* config.js - every tuning constant for the fight lives here. */
+/* config.js - every tuning constant for the fight lives here. */
 (function (g) {
   'use strict';
   var Config = {
@@ -206,7 +206,7 @@
       uppercutHpFrac: 0.30,
       uppercutMinDmg: 8,
 
-      // Get-Up Meter (0 .. 100) â€” balanced so 1st KD is doable (~6.5-7.5 presses/s), getting harder each KD / prior KO
+      // Get-Up Meter (0 .. 100) — balanced so 1st KD is doable (~6.5-7.5 presses/s), getting harder each KD / prior KO
       meterMax: 100,
       pressCooldownFrames: 2,   // min frames between registered human presses (allows up to 30/s while blocking 8-key slams)
       basePressGain: 4.2,       // meter added per valid press on 1st knockdown (needs ~6.2+ presses/s sustained)
