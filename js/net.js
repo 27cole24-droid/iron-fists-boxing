@@ -195,7 +195,7 @@
             send({ t: 'pong', ping: pingMs });
           }
           if (handlers.onStateSnapshot && msg.s) {
-            handlers.onStateSnapshot(msg.s, msg.ev || []);
+            handlers.onStateSnapshot(msg.s, msg.ev || [], msg.hi || null);
           }
           break;
 
@@ -436,13 +436,37 @@
     return out;
   }
 
-  function sendHostState(state, events) {
+  var stepSendCount = 0;
+
+  function slimFighter(f) {
+    var out = {}, k;
+    for (k in f) {
+      if (k !== 'p' && k !== 'assist') out[k] = f[k];
+    }
+    return out;
+  }
+
+  function sendHostState(state, events, hostInp) {
     if (!connected || role !== 'host') return;
+    stepSendCount++;
+    var hasEvents = events && events.length > 0;
+    // Send every frame when events/combo/count are active, or every 2nd frame (30Hz) during normal neutral play to prevent buffer bloat
+    if (!hasEvents && !state.comboState && !state.count && (stepSendCount % 2 === 1)) return;
+
     var ack = lastGuestTs;
     lastGuestTs = 0;
+    var slim = {
+      tick: state.tick, rng: state.rng, phase: state.phase, phaseT: state.phaseT,
+      round: state.round, clock: state.clock,
+      fighters: [slimFighter(state.fighters[0]), slimFighter(state.fighters[1])],
+      count: state.count, comboState: state.comboState,
+      hitstop: state.hitstop, slowmo: state.slowmo, timeScale: state.timeScale,
+      rounds: state.rounds, result: state.result, boxers: state.boxers
+    };
     send({
       t: 'st',
-      s: state,
+      s: slim,
+      hi: hostInp ? { l: !!hostInp.left, r: !!hostInp.right, b: !!hostInp.block } : null,
       ev: events || [],
       ack: ack
     });

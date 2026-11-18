@@ -701,10 +701,13 @@
       var steps = 0;
       while (app.accumulator >= C.DT && steps < C.MAX_STEPS_PER_FRAME) {
         if (isOnlineGuest) {
-          // Online Guest: sample local Player 1 controls and send to Host; state comes from Host snapshots
+          // Online Guest: sample local Player 1 controls, send to Host, AND predict locally for 0-frame input response
           var gInp = copyInput(Input.sampleP1());
+          var hInp = app.lastStepInputs[0] || copyInput({});
           app.lastStepInputs[1] = gInp;
           Net.sendGuestInput(gInp);
+          app.prevSimState = app.simState;
+          app.simState = Sim.step(app.simState, hInp, gInp);
         } else {
           app.prevSimState = app.simState;
           var in0, in1;
@@ -727,7 +730,7 @@
             for (var i = 0; i < app.simState.events.length; i++) frameEvents.push(app.simState.events[i]);
           }
           if (isOnlineFight && Net.getRole() === 'host') {
-            Net.sendHostState(app.simState, app.simState.events);
+            Net.sendHostState(app.simState, app.simState.events, in0);
           }
           if (app.screen === 'title' && app.simState.phase === 'finished' && app.simState.phaseT > 120) {
             startAttractFight();
@@ -1466,9 +1469,18 @@
           hideModals();
           startMatch(payload);
         },
-        onStateSnapshot: function (remoteState, remoteEvents) {
-          if (app.screen !== 'fight' || app.vsMode !== 'online') return;
-          app.prevSimState = app.simState || remoteState;
+        onStateSnapshot: function (remoteState, remoteEvents, hostInp) {
+          if (app.screen !== 'fight' || app.vsMode !== 'online' || !app.simState) return;
+          // Re-attach static derived fighter stats (`p`) stripped from network packets
+          remoteState.fighters[0].p = app.simState.fighters[0].p;
+          remoteState.fighters[1].p = app.simState.fighters[1].p;
+          remoteState.fighters[0].assist = null;
+          remoteState.fighters[1].assist = null;
+          remoteState.events = [];
+          if (hostInp) {
+            app.lastStepInputs[0] = copyInput({ left: hostInp.l, right: hostInp.r, block: hostInp.b });
+          }
+          app.prevSimState = app.simState;
           app.simState = remoteState;
           if (remoteEvents && remoteEvents.length) {
             for (var i = 0; i < remoteEvents.length; i++) {
