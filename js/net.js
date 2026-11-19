@@ -1,99 +1,285 @@
-/* net.js - WebRTC Peer-to-Peer Online Multiplayer Manager (PeerJS).
+/* net.js - Zero-Dependency Multi-Broker WebSocket Online Multiplayer Manager.
+ *
+ * Uses built-in WebSockets (MQTT v3.1.1 over WSS) connected in parallel to public
+ * cloud brokers (EMQX + HiveMQ + Mosquitto) plus local BroadcastChannel so:
+ *   - No external CDN script (PeerJS) can fail or be blocked by ad-blockers
+ *   - No WebRTC NAT / STUN / TURN hole-punching failures on 4G/5G phones or school Wi-Fi
+ *   - Whichever broker delivers each packet first wins (deduplicated by sequence number)
  *
  * Supports:
- *   1. Host Room (generates a 4-character Room Code + shareable ?room=CODE invite link)
- *   2. Join Room (connects to a 4-character Room Code)
- *   3. Quick Match (auto-pairs waiting players via a deterministic public lobby pool)
- *
- * Host is Fighter 0 (Red Corner, left); Guest is Fighter 1 (Blue Corner, right).
- * Both players use their standard Player 1 controls (keyboard or mobile touch pad).
- * Edge-triggered inputs (jab, hook, uppercut, dodge, combo, get-up presses) from the Guest
- * are latched on arrival so no quick tap is ever lost between 60Hz simulation steps.
+ *   1. Host Room (4-character Room Code + ?room=CODE invite link)
+ *   2. Join Room (connects to a 4-character Room Code; if two friends both type the same
+ *      code and click Join, one automatically becomes Host and they still connect!)
+ *   3. Quick Match (live heartbeat lobby that pairs any two searching players in <1s)
  */
 (function (g) {
   'use strict';
 
-  var ROOM_PREFIX = 'ironfists-v1-room-';
-  var QUICK_PREFIX = 'ironfists-v1-quick-';
-  var QUICK_SLOTS = 4;
+  var BROKERS = [
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt',
+    'wss://test.mosquitto.org:8081/mqtt'
+  ];
+  var TOPIC_LOBBY = 'ironfists/v3/lobby';
+  var TOPIC_ROOM_PREFIX = 'ironfists/v3/room/';
   var CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
-  var peer = null;
-  var conn = null;
+  var myId = 'if_' + Math.random().toString(36).slice(2, 10) + '_' + (Date.now() % 100000);
+  var peerId = null;
   var role = null;           // 'host' | 'guest' | null
   var roomCode = '';
+  var mode = 'idle';         // 'idle' | 'quick' | 'room'
   var connected = false;
+  var seekTs = 0;
   var pingMs = 0;
   var lastGuestTs = 0;
   var lastPingSent = 0;
+  var lastRxTime = 0;
+
+  var txSeq = 0;
+  var seenSeq = {};          // senderId -> highest seq processed
+  var clients = [];
+  var bc = null;
+  var activeTopic = null;
+  var heartbeatTimer = null;
+  var stepSendCount = 0;
 
   // Latched remote input state (for Host consuming Guest's inputs at 60Hz)
   var remoteHold = { left: false, right: false, block: false };
   var remoteEdge = { jab: false, hook: false, uppercut: false, dodge: false, combo: false };
   var remotePresses = 0;
 
-  // Callbacks wired by main.js
   var handlers = {
-    onStatus: null,          // function(statusObj)
-    onConnected: null,       // function(info)
-    onDisconnected: null,    // function(reason)
-    onRemoteSelect: null,    // function(slot, boxerId)
-    onRemoteReady: null,     // function(readyBool)
-    onMatchStart: null,      // function(payload)
-    onStateSnapshot: null,   // function(state, events)
-    onSkipRest: null,        // function()
-    onRematchRequest: null   // function()
+    onStatus: null,
+    onConnected: null,
+    onDisconnected: null,
+    onRemoteSelect: null,
+    onRemoteReady: null,
+    onMatchStart: null,
+    onStateSnapshot: null,
+    onSkipRest: null,
+    onRematchRequest: null
   };
 
-  var peerScriptLoading = false;
-  var peerScriptCallbacks = [];
-
-  function ensurePeerJS(cb) {
-    if (g.Peer) { cb(true); return; }
-    peerScriptCallbacks.push(cb);
-    if (peerScriptLoading) return;
-    peerScriptLoading = true;
-
-    function tryLoad(url, fallbackUrl) {
-      var s = document.createElement('script');
-      s.src = url;
-      s.async = true;
-      s.onload = function () {
-        peerScriptLoading = false;
-        var list = peerScriptCallbacks.slice();
-        peerScriptCallbacks = [];
-        for (var i = 0; i < list.length; i++) list[i](!!g.Peer);
-      };
-      s.onerror = function () {
-        if (fallbackUrl) {
-          tryLoad(fallbackUrl, null);
-        } else {
-          peerScriptLoading = false;
-          var list = peerScriptCallbacks.slice();
-          peerScriptCallbacks = [];
-          for (var i = 0; i < list.length; i++) list[i](false);
-        }
-      };
-      document.head.appendChild(s);
-    }
-
-    tryLoad(
-      'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
-      'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'
-    );
+  // ------------------------------------------------------------------ Minimal MQTT v3.1.1 over WebSocket
+  function strToUtf8(str) {
+    if (g.TextEncoder) return new g.TextEncoder().encode(str);
+    var utf8 = unescape(encodeURIComponent(str));
+    var arr = new Uint8Array(utf8.length);
+    for (var i = 0; i < utf8.length; i++) arr[i] = utf8.charCodeAt(i);
+    return arr;
   }
 
-  function peerConfig() {
-    return {
-      debug: 0,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
-        ]
+  function utf8ToStr(bytes) {
+    if (g.TextDecoder) return new g.TextDecoder().decode(bytes);
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    try { return decodeURIComponent(escape(s)); } catch (_) { return s; }
+  }
+
+  function encVarLen(len) {
+    var out = [];
+    do {
+      var b = len % 128;
+      len = Math.floor(len / 128);
+      if (len > 0) b |= 128;
+      out.push(b);
+    } while (len > 0);
+    return out;
+  }
+
+  function createMqttSocket(url) {
+    var ws = null;
+    var isReady = false;
+    var closed = false;
+    var buf = new Uint8Array(0);
+    var subId = 1;
+    var pingInterval = null;
+    var currentTopic = null;
+
+    var client = {
+      url: url,
+      ready: function () { return isReady; },
+      subscribe: function (topic) {
+        currentTopic = topic;
+        if (!isReady || !ws) return;
+        var tb = strToUtf8(topic);
+        var rem = 2 + 2 + tb.length + 1;
+        var vh = encVarLen(rem);
+        var pkt = new Uint8Array(1 + vh.length + rem);
+        pkt[0] = 0x82;
+        pkt.set(vh, 1);
+        var o = 1 + vh.length;
+        var pid = (subId++) & 0xffff;
+        pkt[o] = (pid >> 8) & 255;
+        pkt[o + 1] = pid & 255;
+        pkt[o + 2] = (tb.length >> 8) & 255;
+        pkt[o + 3] = tb.length & 255;
+        pkt.set(tb, o + 4);
+        pkt[o + 4 + tb.length] = 0;
+        try { ws.send(pkt); } catch (_) {}
+      },
+      publish: function (topic, jsonStr) {
+        if (!isReady || !ws) return;
+        var tb = strToUtf8(topic);
+        var mb = strToUtf8(jsonStr);
+        var rem = 2 + tb.length + mb.length;
+        var vh = encVarLen(rem);
+        var pkt = new Uint8Array(1 + vh.length + rem);
+        pkt[0] = 0x30;
+        pkt.set(vh, 1);
+        var o = 1 + vh.length;
+        pkt[o] = (tb.length >> 8) & 255;
+        pkt[o + 1] = tb.length & 255;
+        pkt.set(tb, o + 2);
+        pkt.set(mb, o + 2 + tb.length);
+        try { ws.send(pkt); } catch (_) {}
+      },
+      close: function () {
+        closed = true;
+        isReady = false;
+        if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+        if (ws) {
+          try { ws.close(); } catch (_) {}
+          ws = null;
+        }
       }
     };
+
+    try {
+      ws = new g.WebSocket(url, 'mqtt');
+      ws.binaryType = 'arraybuffer';
+    } catch (_) {
+      return client;
+    }
+
+    ws.onopen = function () {
+      if (closed) return;
+      var cid = strToUtf8(myId + '_' + Math.floor(Math.random() * 999));
+      var header = [0, 4, 77, 81, 84, 84, 4, 2, 0, 45, (cid.length >> 8) & 255, cid.length & 255];
+      var rem = header.length + cid.length;
+      var vh = encVarLen(rem);
+      var pkt = new Uint8Array(1 + vh.length + rem);
+      pkt[0] = 0x10;
+      pkt.set(vh, 1);
+      pkt.set(header, 1 + vh.length);
+      pkt.set(cid, 1 + vh.length + header.length);
+      try { ws.send(pkt); } catch (_) {}
+    };
+
+    ws.onmessage = function (ev) {
+      if (closed || !ev.data) return;
+      var incoming = new Uint8Array(ev.data);
+      var merged = new Uint8Array(buf.length + incoming.length);
+      merged.set(buf, 0);
+      merged.set(incoming, buf.length);
+      buf = merged;
+
+      while (buf.length >= 2) {
+        var type = buf[0] >> 4;
+        var mult = 1, rem = 0, idx = 1, b;
+        do {
+          if (idx >= buf.length) return;
+          b = buf[idx++];
+          rem += (b & 127) * mult;
+          mult *= 128;
+        } while ((b & 128) !== 0);
+        if (buf.length < idx + rem) return;
+        var payload = buf.subarray(idx, idx + rem);
+        buf = buf.subarray(idx + rem);
+
+        if (type === 2) {
+          // CONNACK -> broker ready!
+          isReady = true;
+          if (currentTopic) client.subscribe(currentTopic);
+          onAnyBrokerReady();
+          if (pingInterval) clearInterval(pingInterval);
+          pingInterval = setInterval(function () {
+            if (isReady && ws) {
+              try { ws.send(new Uint8Array([0xc0, 0x00])); } catch (_) {}
+            }
+          }, 20000);
+        } else if (type === 3) {
+          // PUBLISH
+          var tlen = (payload[0] << 8) | payload[1];
+          var topicStr = utf8ToStr(payload.subarray(2, 2 + tlen));
+          var msgStr = utf8ToStr(payload.subarray(2 + tlen));
+          handleRawPacket(topicStr, msgStr);
+        }
+      }
+    };
+
+    ws.onerror = function () {};
+    ws.onclose = function () {
+      isReady = false;
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+    };
+
+    return client;
+  }
+
+  function ensureTransports() {
+    if (!bc && g.BroadcastChannel) {
+      try {
+        bc = new g.BroadcastChannel('ironfists_net_v3');
+        bc.onmessage = function (ev) {
+          if (ev && ev.data && ev.data.topic && ev.data.payload) {
+            handleRawPacket(ev.data.topic, ev.data.payload);
+          }
+        };
+      } catch (_) {}
+    }
+    if (clients.length === 0 && g.WebSocket) {
+      for (var i = 0; i < BROKERS.length; i++) {
+        clients.push(createMqttSocket(BROKERS[i]));
+      }
+    }
+  }
+
+  function anyBrokerConnected() {
+    if (bc) {
+      for (var i = 0; i < clients.length; i++) {
+        if (clients[i].ready()) return true;
+      }
+    }
+    for (var j = 0; j < clients.length; j++) {
+      if (clients[j].ready()) return true;
+    }
+    return false;
+  }
+
+  function onAnyBrokerReady() {
+    if (mode === 'room' && !connected) {
+      if (role === 'host') {
+        notifyStatus('waiting', 'Room ' + roomCode + ' ready! Waiting for friend to join...');
+      } else {
+        notifyStatus('connecting', 'Searching for Room ' + roomCode + '...');
+      }
+      sendHandshakePulse();
+    } else if (mode === 'quick' && !connected) {
+      notifyStatus('waiting', 'Searching for an online opponent...');
+      sendHandshakePulse();
+    }
+  }
+
+  function subscribeTopic(topic) {
+    activeTopic = topic;
+    ensureTransports();
+    for (var i = 0; i < clients.length; i++) {
+      clients[i].subscribe(topic);
+    }
+  }
+
+  function publishTopic(topic, obj) {
+    obj.from = myId;
+    obj.seq = ++txSeq;
+    var jsonStr = JSON.stringify(obj);
+    if (bc) {
+      try { bc.postMessage({ topic: topic, payload: jsonStr }); } catch (_) {}
+    }
+    for (var i = 0; i < clients.length; i++) {
+      clients[i].publish(topic, jsonStr);
+    }
   }
 
   function randomCode(len) {
@@ -130,275 +316,274 @@
     remotePresses = 0;
   }
 
-  function disconnect(silent) {
-    var wasConnected = connected;
-    connected = false;
-    resetRemoteInput();
-    if (conn) {
-      try { conn.close(); } catch (_) {}
-      conn = null;
-    }
-    if (peer) {
-      try { peer.destroy(); } catch (_) {}
-      peer = null;
-    }
-    role = null;
-    roomCode = '';
-    pingMs = 0;
-    if (!silent && wasConnected && handlers.onDisconnected) {
-      handlers.onDisconnected('Connection closed');
+  function clearHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
     }
   }
 
-  function wireConnection(c) {
-    conn = c;
-    c.on('open', function () {
-      connected = true;
-      resetRemoteInput();
-      // If Host was occupying a public Quick Match lobby slot, disconnect from broker
-      // so the slot ID is immediately freed for the next pair of players while keeping P2P open.
-      if (role === 'host' && roomCode === 'QUICK' && peer && !peer.disconnected) {
-        try { peer.disconnect(); } catch (_) {}
-      }
-      notifyStatus('connected', 'Opponent connected!');
-      if (handlers.onConnected) {
-        handlers.onConnected({ role: role, roomCode: roomCode });
-      }
-    });
-
-    c.on('data', function (msg) {
-      if (!msg || typeof msg !== 'object') return;
-      switch (msg.t) {
-        case 'inp':
-          // Guest input arriving at Host: update hold states and latch edge triggers
-          remoteHold.left = !!msg.l;
-          remoteHold.right = !!msg.r;
-          remoteHold.block = !!msg.b;
-          if (msg.j) remoteEdge.jab = true;
-          if (msg.h) remoteEdge.hook = true;
-          if (msg.u) remoteEdge.uppercut = true;
-          if (msg.d) remoteEdge.dodge = true;
-          if (msg.c) remoteEdge.combo = true;
-          if (typeof msg.p === 'number' && msg.p > 0) {
-            remotePresses += (msg.p | 0);
+  function startHeartbeat() {
+    clearHeartbeat();
+    heartbeatTimer = setInterval(function () {
+      if (mode === 'idle') return;
+      if (!connected) {
+        sendHandshakePulse();
+      } else {
+        // Send keepalive & check if opponent timed out (12 seconds without any packet)
+        publishTopic(activeTopic, { t: 'keepalive', to: peerId });
+        if (lastRxTime > 0 && Date.now() - lastRxTime > 12000) {
+          var wasConn = connected;
+          disconnect(true);
+          notifyStatus('disconnected', 'Opponent disconnected.');
+          if (wasConn && handlers.onDisconnected) {
+            handlers.onDisconnected('Opponent disconnected.');
           }
-          if (msg.ts) lastGuestTs = msg.ts;
-          break;
+        }
+      }
+    }, 550);
+  }
 
-        case 'st':
-          // Host simulation state + events arriving at Guest
-          if (msg.ack && msg.ack > 0) {
-            var rtt = Date.now() - msg.ack;
-            if (rtt >= 0 && rtt < 5000) {
-              pingMs = pingMs === 0 ? rtt : Math.round(pingMs * 0.8 + rtt * 0.2);
-            }
-            send({ t: 'pong', ping: pingMs });
+  function sendHandshakePulse() {
+    if (!activeTopic || connected) return;
+    if (mode === 'quick') {
+      publishTopic(TOPIC_LOBBY, { t: 'seek', ts: seekTs });
+    } else if (mode === 'room') {
+      publishTopic(activeTopic, { t: 'hello', role: role, ts: seekTs, code: roomCode });
+    }
+  }
+
+  function finalizeConnection(assignedRole, remotePeerId, code) {
+    if (connected) return;
+    role = assignedRole;
+    peerId = remotePeerId;
+    roomCode = code;
+    mode = 'room';
+    connected = true;
+    lastRxTime = Date.now();
+    resetRemoteInput();
+
+    var roomTopic = TOPIC_ROOM_PREFIX + roomCode;
+    if (activeTopic !== roomTopic) {
+      subscribeTopic(roomTopic);
+    }
+    publishTopic(roomTopic, { t: 'ack_conn', to: peerId, role: role });
+
+    notifyStatus('connected', 'Opponent connected!');
+    if (handlers.onConnected) {
+      handlers.onConnected({ role: role, roomCode: roomCode });
+    }
+  }
+
+  function handleRawPacket(topic, msgStr) {
+    if (mode === 'idle' || topic !== activeTopic) return;
+    var msg;
+    try { msg = JSON.parse(msgStr); } catch (_) { return; }
+    if (!msg || !msg.from || msg.from === myId) return;
+
+    // Deduplicate across the parallel brokers using sender sequence numbers
+    if (typeof msg.seq === 'number') {
+      var prevSeq = seenSeq[msg.from] || 0;
+      if (msg.seq <= prevSeq) return;
+      seenSeq[msg.from] = msg.seq;
+    }
+
+    // If already paired with a specific peer, ignore packets from anyone else
+    if (connected && peerId && msg.from !== peerId) return;
+    if (msg.to && msg.to !== myId) return;
+
+    lastRxTime = Date.now();
+
+    // 1. Quick Match lobby pairing
+    if (mode === 'quick' && !connected) {
+      if (msg.t === 'seek') {
+        var iAmHost = (seekTs < msg.ts) || (seekTs === msg.ts && myId < msg.from);
+        if (iAmHost) {
+          var newCode = 'Q' + randomCode(3);
+          publishTopic(TOPIC_LOBBY, { t: 'pair', to: msg.from, code: newCode });
+          finalizeConnection('host', msg.from, newCode);
+        }
+      } else if (msg.t === 'pair' && msg.to === myId && msg.code) {
+        finalizeConnection('guest', msg.from, msg.code);
+      }
+      return;
+    }
+
+    // 2. Room Code pairing (works even if both friends clicked Join or both clicked Host with same code!)
+    if (mode === 'room' && !connected) {
+      if (msg.t === 'hello') {
+        var myHost;
+        if (role === 'host' && msg.role === 'guest') myHost = true;
+        else if (role === 'guest' && msg.role === 'host') myHost = false;
+        else myHost = (seekTs < msg.ts) || (seekTs === msg.ts && myId < msg.from);
+
+        if (myHost) {
+          publishTopic(activeTopic, { t: 'welcome', to: msg.from, code: roomCode });
+          finalizeConnection('host', msg.from, roomCode);
+        } else {
+          // Reply with another hello so the host immediately sees us
+          publishTopic(activeTopic, { t: 'hello', role: 'guest', ts: seekTs, code: roomCode });
+        }
+      } else if (msg.t === 'welcome' && msg.to === myId) {
+        finalizeConnection('guest', msg.from, roomCode);
+      } else if (msg.t === 'ack_conn' && msg.to === myId) {
+        var myAssignedRole = msg.role === 'host' ? 'guest' : 'host';
+        finalizeConnection(myAssignedRole, msg.from, roomCode);
+      }
+      return;
+    }
+
+    // 3. In-session messages between connected Host and Guest
+    switch (msg.t) {
+      case 'ack_conn':
+        break;
+
+      case 'leave':
+        var wasConn = connected;
+        disconnect(true);
+        notifyStatus('disconnected', 'Opponent left the room.');
+        if (wasConn && handlers.onDisconnected) {
+          handlers.onDisconnected('Opponent left the room.');
+        }
+        break;
+
+      case 'inp':
+        remoteHold.left = !!msg.l;
+        remoteHold.right = !!msg.r;
+        remoteHold.block = !!msg.b;
+        if (msg.j) remoteEdge.jab = true;
+        if (msg.h) remoteEdge.hook = true;
+        if (msg.u) remoteEdge.uppercut = true;
+        if (msg.d) remoteEdge.dodge = true;
+        if (msg.c) remoteEdge.combo = true;
+        if (typeof msg.p === 'number' && msg.p > 0) {
+          remotePresses += (msg.p | 0);
+        }
+        if (msg.ts) lastGuestTs = msg.ts;
+        break;
+
+      case 'st':
+        if (msg.ack && msg.ack > 0) {
+          var rtt = Date.now() - msg.ack;
+          if (rtt >= 0 && rtt < 5000) {
+            pingMs = pingMs === 0 ? rtt : Math.round(pingMs * 0.8 + rtt * 0.2);
           }
-          if (handlers.onStateSnapshot && msg.s) {
-            handlers.onStateSnapshot(msg.s, msg.ev || [], msg.hi || null);
-          }
-          break;
+          send({ t: 'pong', ping: pingMs });
+        }
+        if (handlers.onStateSnapshot && msg.s) {
+          handlers.onStateSnapshot(msg.s, msg.ev || [], msg.hi || null);
+        }
+        break;
 
-        case 'pong':
-          if (typeof msg.ping === 'number') pingMs = msg.ping;
-          break;
+      case 'pong':
+        if (typeof msg.ping === 'number') pingMs = msg.ping;
+        break;
 
-        case 'sel':
-          if (handlers.onRemoteSelect) handlers.onRemoteSelect(msg.slot, msg.boxer);
-          break;
+      case 'sel':
+        if (handlers.onRemoteSelect) handlers.onRemoteSelect(msg.slot, msg.boxer);
+        break;
 
-        case 'ready':
-          if (handlers.onRemoteReady) handlers.onRemoteReady(!!msg.ready);
-          break;
+      case 'ready':
+        if (handlers.onRemoteReady) handlers.onRemoteReady(!!msg.ready);
+        break;
 
-        case 'start':
-          if (handlers.onMatchStart) handlers.onMatchStart(msg);
-          break;
+      case 'start':
+        if (handlers.onMatchStart) handlers.onMatchStart(msg);
+        break;
 
-        case 'skip_rest':
-          if (handlers.onSkipRest) handlers.onSkipRest();
-          break;
+      case 'skip_rest':
+        if (handlers.onSkipRest) handlers.onSkipRest();
+        break;
 
-        case 'rematch':
-          if (handlers.onRematchRequest) handlers.onRematchRequest();
-          break;
-      }
-    });
+      case 'rematch':
+        if (handlers.onRematchRequest) handlers.onRematchRequest();
+        break;
+    }
+  }
 
-    c.on('close', function () {
-      var wasConn = connected;
-      disconnect(true);
-      notifyStatus('disconnected', 'Opponent disconnected.');
-      if (wasConn && handlers.onDisconnected) {
-        handlers.onDisconnected('Opponent disconnected.');
-      }
-    });
-
-    c.on('error', function () {
-      var wasConn = connected;
-      disconnect(true);
-      notifyStatus('error', 'Connection error.');
-      if (wasConn && handlers.onDisconnected) {
-        handlers.onDisconnected('Connection lost.');
-      }
-    });
+  function disconnect(silent) {
+    if (connected && activeTopic && peerId) {
+      try { publishTopic(activeTopic, { t: 'leave', to: peerId }); } catch (_) {}
+    }
+    var wasConnected = connected;
+    connected = false;
+    mode = 'idle';
+    role = null;
+    peerId = null;
+    roomCode = '';
+    activeTopic = null;
+    pingMs = 0;
+    lastRxTime = 0;
+    clearHeartbeat();
+    resetRemoteInput();
+    if (!silent && wasConnected && handlers.onDisconnected) {
+      handlers.onDisconnected('Connection closed.');
+    }
   }
 
   function hostRoom(customCode) {
     disconnect(true);
+    mode = 'room';
     role = 'host';
+    seekTs = Date.now();
     roomCode = (customCode || randomCode(4)).toUpperCase().replace(/[^A-Z0-9]/g, '');
-    notifyStatus('connecting', 'Creating room ' + roomCode + '...');
-
-    ensurePeerJS(function (ok) {
-      if (!ok) {
-        notifyStatus('error', 'Could not load WebRTC networking library. Check internet connection.');
-        return;
-      }
-      var peerId = ROOM_PREFIX + roomCode;
-      var p = new g.Peer(peerId, peerConfig());
-      peer = p;
-
-      p.on('open', function () {
-        notifyStatus('waiting', 'Waiting for opponent to join room ' + roomCode + '...');
-      });
-
-      p.on('connection', function (c) {
-        if (conn && connected) {
-          c.on('open', function () { c.close(); });
-          return;
-        }
-        wireConnection(c);
-      });
-
-      p.on('error', function (err) {
-        if (err && err.type === 'unavailable-id') {
-          // Room code collision: try a fresh code
-          hostRoom(randomCode(4));
-          return;
-        }
-        notifyStatus('error', 'Network error: ' + (err && err.type ? err.type : 'failed'));
-      });
-    });
+    subscribeTopic(TOPIC_ROOM_PREFIX + roomCode);
+    startHeartbeat();
+    if (anyBrokerConnected()) {
+      notifyStatus('waiting', 'Room ' + roomCode + ' ready! Share the code or invite link.');
+      sendHandshakePulse();
+    } else {
+      notifyStatus('connecting', 'Opening Room ' + roomCode + '...');
+    }
   }
 
   function joinRoom(code) {
     var clean = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!clean || clean.length < 3) {
-      notifyStatus('error', 'Enter a valid 4-character Room Code.');
+    if (!clean || clean.length < 2) {
+      notifyStatus('error', 'Enter a Room Code first (e.g. 4 letters/numbers).');
       return;
     }
     disconnect(true);
+    mode = 'room';
     role = 'guest';
+    seekTs = Date.now();
     roomCode = clean;
-    notifyStatus('connecting', 'Joining room ' + roomCode + '...');
-
-    ensurePeerJS(function (ok) {
-      if (!ok) {
-        notifyStatus('error', 'Could not load WebRTC networking library. Check internet connection.');
-        return;
-      }
-      var p = new g.Peer(peerConfig());
-      peer = p;
-
-      p.on('open', function () {
-        var c = p.connect(ROOM_PREFIX + roomCode, { reliable: true });
-        wireConnection(c);
-      });
-
-      p.on('error', function (err) {
-        if (err && err.type === 'peer-unavailable') {
-          notifyStatus('error', 'Room "' + roomCode + '" not found. Check the code and try again.');
-        } else {
-          notifyStatus('error', 'Could not connect: ' + (err && err.type ? err.type : 'error'));
-        }
-      });
-    });
+    subscribeTopic(TOPIC_ROOM_PREFIX + roomCode);
+    startHeartbeat();
+    if (anyBrokerConnected()) {
+      notifyStatus('connecting', 'Joining Room ' + roomCode + '...');
+      sendHandshakePulse();
+    } else {
+      notifyStatus('connecting', 'Connecting to Room ' + roomCode + '...');
+    }
   }
 
   function quickMatch() {
     disconnect(true);
-    roomCode = 'QUICK';
-    notifyStatus('connecting', 'Searching for an online opponent...');
-
-    ensurePeerJS(function (ok) {
-      if (!ok) {
-        notifyStatus('error', 'Could not load WebRTC networking library. Check internet connection.');
-        return;
-      }
-      tryQuickSlot(0);
-    });
-  }
-
-  function tryQuickSlot(slotIdx) {
-    if (slotIdx >= QUICK_SLOTS) slotIdx = 0;
-    var slotId = QUICK_PREFIX + slotIdx;
+    mode = 'quick';
     role = 'host';
-    var p = new g.Peer(slotId, peerConfig());
-    peer = p;
-
-    p.on('open', function () {
-      notifyStatus('waiting', 'In matchmaking queue... Waiting for opponent...');
-    });
-
-    p.on('connection', function (c) {
-      if (conn && connected) {
-        c.on('open', function () { c.close(); });
-        return;
-      }
-      wireConnection(c);
-    });
-
-    p.on('error', function (err) {
-      if (err && err.type === 'unavailable-id') {
-        // Someone is already waiting in this slot! Connect to them as Guest!
-        try { p.destroy(); } catch (_) {}
-        role = 'guest';
-        notifyStatus('connecting', 'Opponent found! Connecting...');
-        var guestPeer = new g.Peer(peerConfig());
-        peer = guestPeer;
-        var settled = false;
-        var fallbackTimer = setTimeout(function () {
-          if (!settled && !connected) {
-            settled = true;
-            try { guestPeer.destroy(); } catch (_) {}
-            tryQuickSlot((slotIdx + 1) % QUICK_SLOTS);
-          }
-        }, 4500);
-
-        guestPeer.on('open', function () {
-          var c = guestPeer.connect(slotId, { reliable: true });
-          c.on('open', function () {
-            settled = true;
-            clearTimeout(fallbackTimer);
-          });
-          wireConnection(c);
-        });
-
-        guestPeer.on('error', function () {
-          if (!settled && !connected) {
-            settled = true;
-            clearTimeout(fallbackTimer);
-            try { guestPeer.destroy(); } catch (_) {}
-            tryQuickSlot((slotIdx + 1) % QUICK_SLOTS);
-          }
-        });
-      } else {
-        notifyStatus('error', 'Matchmaking error: ' + (err && err.type ? err.type : 'failed'));
-      }
-    });
+    roomCode = 'QUICK';
+    seekTs = Date.now();
+    subscribeTopic(TOPIC_LOBBY);
+    startHeartbeat();
+    if (anyBrokerConnected()) {
+      notifyStatus('waiting', 'Searching for an online opponent...');
+      sendHandshakePulse();
+    } else {
+      notifyStatus('connecting', 'Connecting to matchmaking lobby...');
+    }
   }
 
   function send(obj) {
-    if (conn && connected) {
-      try { conn.send(obj); } catch (_) {}
-    }
+    if (!connected || !activeTopic) return;
+    if (peerId) obj.to = peerId;
+    publishTopic(activeTopic, obj);
   }
 
   function sendGuestInput(inp) {
     if (!connected || role !== 'guest') return;
     var now = Date.now();
-    var includeTs = (now - lastPingSent >= 250) ? now : 0;
+    var includeTs = (now - lastPingSent >= 300) ? now : 0;
     if (includeTs) lastPingSent = now;
     send({
       t: 'inp',
@@ -436,8 +621,6 @@
     return out;
   }
 
-  var stepSendCount = 0;
-
   function slimFighter(f) {
     var out = {}, k;
     for (k in f) {
@@ -450,7 +633,6 @@
     if (!connected || role !== 'host') return;
     stepSendCount++;
     var hasEvents = events && events.length > 0;
-    // Send every frame when events/combo/count are active, or every 2nd frame (30Hz) during normal neutral play to prevent buffer bloat
     if (!hasEvents && !state.comboState && !state.count && (stepSendCount % 2 === 1)) return;
 
     var ack = lastGuestTs;
