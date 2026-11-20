@@ -36,6 +36,19 @@
           <button id="btn-enter" class="btn-primary">ENTER THE RING</button>
           <button id="btn-how" class="btn-secondary">CONTROLS &amp; RULES</button>
         </div>
+
+        <!-- Top 3 Online Elo Leaderboard -->
+        <div class="lb-card">
+          <div class="lb-header">
+            <span class="lb-title">🏆 TOP 3 ONLINE ELO LEADERBOARD</span>
+            <div class="lb-profile">
+              <input id="inp-player-name" class="lb-name-inp" type="text" maxlength="14" placeholder="YOUR NAME" title="Set your Leaderboard Name" autocomplete="off" />
+              <span id="player-elo-badge" class="lb-my-elo">ELO: 1000</span>
+            </div>
+          </div>
+          <div id="lb-title-list" class="lb-list"></div>
+        </div>
+
         <div class="title-controls-mini">
           <span><strong>P1 Move:</strong> <span class="kbd">A</span><span class="kbd">D</span></span>
           <span><strong>Punches:</strong> <span class="kbd">J</span> Jab · <span class="kbd">K</span> Hook · <span class="kbd">L</span> Uppercut</span>
@@ -82,6 +95,11 @@
             <button id="btn-net-copy-link" class="btn-net-mini" title="Copy Invite Link">🔗 INVITE LINK</button>
           </div>
           <button id="btn-net-leave" class="btn-net-mini danger" style="display:none;">✕ LEAVE</button>
+        </div>
+        <div class="online-lb-row">
+          <span class="lb-inline-label">🏆 TOP 3 ELO:</span>
+          <div id="lb-online-list" class="lb-inline-list"></div>
+          <span id="net-your-elo" class="lb-my-elo">YOUR ELO: 1000</span>
         </div>
       </div>
 
@@ -320,6 +338,7 @@
       <div class="modal-box">
         <div id="res-headline" class="modal-title">WINNER!</div>
         <div id="res-sub" class="modal-sub">KO — Round 2</div>
+        <div id="res-elo-callout" class="res-elo-callout" style="display:none;"></div>
         <div id="res-cards-wrap"></div>
         <table class="score-table" id="res-stats-table"></table>
         <div class="modal-actions">

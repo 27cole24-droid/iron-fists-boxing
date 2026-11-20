@@ -4,6 +4,9 @@
   var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio, Net = g.Net;
 
   var DIFF_KEY = 'ironFistsDifficulty';
+  var PROFILE_KEY = 'ironFistsEloProfile_v1';
+  var LB_KEY = 'ironFistsTop3Leaderboard_v1';
+
   function loadDifficulty() {
     try {
       var v = window.localStorage.getItem(DIFF_KEY);
@@ -12,6 +15,49 @@
     return 'easy';
   }
   function saveDifficulty(v) { try { window.localStorage.setItem(DIFF_KEY, v); } catch (_) {} }
+
+  function loadProfile() {
+    try {
+      var raw = window.localStorage.getItem(PROFILE_KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p && p.id && typeof p.elo === 'number') return p;
+      }
+    } catch (_) {}
+    var def = {
+      id: 'p_' + Math.random().toString(36).slice(2, 9),
+      name: 'BOXER-' + Math.floor(100 + Math.random() * 900),
+      elo: 1000,
+      wins: 0
+    };
+    saveProfile(def);
+    return def;
+  }
+
+  function saveProfile(p) {
+    try { window.localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (_) {}
+  }
+
+  var DEFAULT_TOP3 = [
+    { id: 'seed_1', name: 'IRON CHAMP', elo: 1050, wins: 2 },
+    { id: 'seed_2', name: 'CONTENDER', elo: 1025, wins: 1 },
+    { id: 'seed_3', name: 'ROOKIE KING', elo: 1000, wins: 0 }
+  ];
+
+  function loadLeaderboard() {
+    try {
+      var raw = window.localStorage.getItem(LB_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) return arr.slice(0, 3);
+      }
+    } catch (_) {}
+    return DEFAULT_TOP3.slice();
+  }
+
+  function saveLeaderboard(arr) {
+    try { window.localStorage.setItem(LB_KEY, JSON.stringify(arr.slice(0, 3))); } catch (_) {}
+  }
 
   var app = {
     screen: 'title',          // 'title' | 'select' | 'fight'
@@ -37,6 +83,8 @@
     priorKOs: [0, 0],
     onlineEventsQueue: [],
     guestReady: false,
+    profile: loadProfile(),
+    leaderboard: loadLeaderboard(),
     accumulator: 0,
     lastFrameTime: 0,
     bannerTimer: 0,
@@ -44,6 +92,84 @@
   };
 
   function $(id) { return document.getElementById(id); }
+
+  function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function mergeAndRenderLeaderboard(incomingList, shouldPublish) {
+    var byId = {};
+    var pool = DEFAULT_TOP3.concat(app.leaderboard || []).concat(incomingList || []);
+    if (app.profile && app.profile.id) {
+      pool.push({
+        id: app.profile.id,
+        name: app.profile.name,
+        elo: app.profile.elo,
+        wins: app.profile.wins || 0
+      });
+    }
+    for (var i = 0; i < pool.length; i++) {
+      var item = pool[i];
+      if (!item || !item.id || typeof item.elo !== 'number') continue;
+      var prev = byId[item.id];
+      if (!prev || item.elo > prev.elo || (item.elo === prev.elo && item.id === app.profile.id)) {
+        byId[item.id] = {
+          id: String(item.id).slice(0, 24),
+          name: String(item.name || 'BOXER').toUpperCase().slice(0, 14),
+          elo: Math.round(item.elo),
+          wins: item.wins | 0
+        };
+      }
+    }
+    var list = Object.keys(byId).map(function (k) { return byId[k]; });
+    list.sort(function (a, b) {
+      if (b.elo !== a.elo) return b.elo - a.elo;
+      return (b.wins || 0) - (a.wins || 0);
+    });
+    app.leaderboard = list.slice(0, 3);
+    saveLeaderboard(app.leaderboard);
+    renderLeaderboardUI();
+    if (shouldPublish && Net && Net.publishLeaderboard) {
+      Net.publishLeaderboard(app.leaderboard);
+    }
+  }
+
+  function renderLeaderboardUI() {
+    var p = app.profile;
+    var badge1 = $('player-elo-badge');
+    if (badge1) badge1.textContent = 'ELO: ' + p.elo;
+    var badge2 = $('net-your-elo');
+    if (badge2) badge2.textContent = 'YOUR ELO: ' + p.elo;
+    var nameInp = $('inp-player-name');
+    if (nameInp && document.activeElement !== nameInp) {
+      nameInp.value = p.name;
+    }
+
+    var medals = ['🥇 #1', '🥈 #2', '🥉 #3'];
+    var titleList = $('lb-title-list');
+    if (titleList) {
+      titleList.innerHTML = app.leaderboard.slice(0, 3).map(function (entry, idx) {
+        var isMe = entry.id === p.id;
+        return '<div class="lb-row rank-' + (idx + 1) + '">' +
+          '<div class="lb-row-top">' +
+            '<span class="lb-rank">' + medals[idx] + '</span>' +
+            '<span class="lb-score">' + entry.elo + ' ELO</span>' +
+          '</div>' +
+          '<div class="lb-name">' + escapeHtml(entry.name) + (isMe ? ' (YOU)' : '') + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    var onlineList = $('lb-online-list');
+    if (onlineList) {
+      onlineList.innerHTML = app.leaderboard.slice(0, 3).map(function (entry, idx) {
+        return '<span class="lb-inline-pill">' + medals[idx] + ' ' + escapeHtml(entry.name) +
+          '<strong>' + entry.elo + '</strong></span>';
+      }).join('');
+    }
+  }
   function copyInput(inp) {
     inp = inp || {};
     var out = {
@@ -570,11 +696,30 @@
     var res = s.result;
     var wBoxer = Boxers.byId(s.boxers[res.winner]);
     var corner;
+    var eloCallout = $('res-elo-callout');
     if (app.vsMode === 'online' && Net && Net.isConnected()) {
       var localIdx = Net.getRole() === 'guest' ? 1 : 0;
-      corner = res.winner === localIdx ? 'You Won!' : 'Online Opponent';
+      var wonOnline = (res.winner === localIdx);
+      corner = wonOnline ? 'You Won!' : 'Online Opponent';
+      if (wonOnline) {
+        var eloGain = res.method === 'KO' ? 30 : 25;
+        app.profile.elo = (app.profile.elo || 1000) + eloGain;
+        app.profile.wins = (app.profile.wins || 0) + 1;
+        saveProfile(app.profile);
+        mergeAndRenderLeaderboard(null, true);
+        if (eloCallout) {
+          eloCallout.style.display = 'inline-block';
+          eloCallout.textContent = '🏆 ONLINE WIN! +' + eloGain + ' ELO → ' + app.profile.elo + ' ELO';
+        }
+      } else {
+        if (eloCallout) {
+          eloCallout.style.display = 'inline-block';
+          eloCallout.textContent = 'ONLINE ELO: ' + app.profile.elo + ' (+0 ELO)';
+        }
+      }
     } else {
       corner = res.winner === 0 ? 'Player 1' : (app.vsMode === '2p' ? 'Player 2' : 'CPU');
+      if (eloCallout) eloCallout.style.display = 'none';
     }
     $('res-headline').textContent = wBoxer.name.toUpperCase() + ' WINS!';
     var m = Math.floor(res.time / 60), r = res.time % 60;
@@ -1496,8 +1641,38 @@
             hideModals();
             startMatch();
           }
+        },
+        onLeaderboard: function (remoteTop3) {
+          mergeAndRenderLeaderboard(remoteTop3, false);
         }
       });
+
+      var nameInp = $('inp-player-name');
+      if (nameInp) {
+        nameInp.value = app.profile.name;
+        var commitName = function () {
+          var clean = String(nameInp.value || '').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').trim().slice(0, 14);
+          if (!clean) clean = app.profile.name;
+          nameInp.value = clean;
+          if (clean !== app.profile.name) {
+            app.profile.name = clean;
+            saveProfile(app.profile);
+            var inTop3 = app.leaderboard.some(function (e) { return e.id === app.profile.id; });
+            mergeAndRenderLeaderboard(null, inTop3);
+          }
+        };
+        nameInp.addEventListener('change', commitName);
+        nameInp.addEventListener('blur', commitName);
+        nameInp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            nameInp.blur();
+          }
+        });
+      }
+
+      mergeAndRenderLeaderboard(null, false);
+      if (Net.syncLeaderboard) Net.syncLeaderboard();
 
       var btnQuick = $('btn-net-quick');
       if (btnQuick) btnQuick.addEventListener('click', function () {

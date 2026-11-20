@@ -22,6 +22,7 @@
   ];
   var TOPIC_LOBBY = 'ironfists/v3/lobby';
   var TOPIC_ROOM_PREFIX = 'ironfists/v3/room/';
+  var TOPIC_LEADERBOARD = 'ironfists/v3/leaderboard/top3';
   var CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
   var myId = 'if_' + Math.random().toString(36).slice(2, 10) + '_' + (Date.now() % 100000);
@@ -58,7 +59,8 @@
     onMatchStart: null,
     onStateSnapshot: null,
     onSkipRest: null,
-    onRematchRequest: null
+    onRematchRequest: null,
+    onLeaderboard: null
   };
 
   // ------------------------------------------------------------------ Minimal MQTT v3.1.1 over WebSocket
@@ -100,8 +102,8 @@
     var client = {
       url: url,
       ready: function () { return isReady; },
-      subscribe: function (topic) {
-        currentTopic = topic;
+      subscribe: function (topic, keepCurrent) {
+        if (!keepCurrent) currentTopic = topic;
         if (!isReady || !ws) return;
         var tb = strToUtf8(topic);
         var rem = 2 + 2 + tb.length + 1;
@@ -119,14 +121,14 @@
         pkt[o + 4 + tb.length] = 0;
         try { ws.send(pkt); } catch (_) {}
       },
-      publish: function (topic, jsonStr) {
+      publish: function (topic, jsonStr, retain) {
         if (!isReady || !ws) return;
         var tb = strToUtf8(topic);
         var mb = strToUtf8(jsonStr);
         var rem = 2 + tb.length + mb.length;
         var vh = encVarLen(rem);
         var pkt = new Uint8Array(1 + vh.length + rem);
-        pkt[0] = 0x30;
+        pkt[0] = retain ? 0x31 : 0x30;
         pkt.set(vh, 1);
         var o = 1 + vh.length;
         pkt[o] = (tb.length >> 8) & 255;
@@ -189,9 +191,11 @@
         buf = buf.subarray(idx + rem);
 
         if (type === 2) {
-          // CONNACK -> broker ready!
+          // CONNACK -> broker ready! Always subscribe to the global Top 3 Elo Leaderboard
           isReady = true;
+          client.subscribe(TOPIC_LEADERBOARD, true);
           if (currentTopic) client.subscribe(currentTopic);
+          if (pendingLeaderboardJson) client.publish(TOPIC_LEADERBOARD, pendingLeaderboardJson, true);
           onAnyBrokerReady();
           if (pingInterval) clearInterval(pingInterval);
           pingInterval = setInterval(function () {
@@ -375,7 +379,17 @@
     }
   }
 
+  var pendingLeaderboardJson = null;
+
   function handleRawPacket(topic, msgStr) {
+    if (topic === TOPIC_LEADERBOARD) {
+      var lb;
+      try { lb = JSON.parse(msgStr); } catch (_) { return; }
+      if (lb && Array.isArray(lb.top3) && handlers.onLeaderboard) {
+        handlers.onLeaderboard(lb.top3);
+      }
+      return;
+    }
     if (mode === 'idle' || topic !== activeTopic) return;
     var msg;
     try { msg = JSON.parse(msgStr); } catch (_) { return; }
@@ -654,6 +668,22 @@
     });
   }
 
+  function syncLeaderboard() {
+    ensureTransports();
+  }
+
+  function publishLeaderboard(top3Array) {
+    ensureTransports();
+    var jsonStr = JSON.stringify({ top3: top3Array, ts: Date.now() });
+    pendingLeaderboardJson = jsonStr;
+    if (bc) {
+      try { bc.postMessage({ topic: TOPIC_LEADERBOARD, payload: jsonStr }); } catch (_) {}
+    }
+    for (var i = 0; i < clients.length; i++) {
+      clients[i].publish(TOPIC_LEADERBOARD, jsonStr, true);
+    }
+  }
+
   g.Net = {
     setHandlers: function (h) {
       for (var k in h) {
@@ -668,6 +698,8 @@
     sendGuestInput: sendGuestInput,
     consumeRemoteInput: consumeRemoteInput,
     sendHostState: sendHostState,
+    syncLeaderboard: syncLeaderboard,
+    publishLeaderboard: publishLeaderboard,
     isConnected: function () { return connected; },
     getRole: function () { return role; },
     getRoomCode: function () { return roomCode; },
