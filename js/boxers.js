@@ -85,6 +85,8 @@
 
   g.Boxers = {
     list: list,
-    byId: function (id) { return byId[id]; }
+    byId: function (id) { return byId[id]; },
+    // Career mode registers dynamic boxers (player + current opponent) without adding them to the roster list
+    register: function (def) { byId[def.id] = def; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

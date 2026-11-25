@@ -234,6 +234,25 @@
       cpuMashVariance: 1.8      // random +/- presses/sec modulation from seeded RNG
     },
 
+    // ======================================================================
+    // CAREER MODE tuning (js/career.js)
+    // ======================================================================
+    CAREER: {
+      fightsPerVenue: 3,        // bouts per venue (last one is the venue champion / boss)
+      startPoints: 3,           // free skill points at career start
+      statCap: 10,              // max level of any stat
+      costDivisor: 3,           // upgrade cost = ceil(currentStat / costDivisor) skill points
+      winBase: 2,               // skill points for any win
+      winPerVenue: 1,           // + this per venue climbed (Backyard 0 ... Stadium 4)
+      koBonus: 1,               // + for winning by KO
+      bossBonus: 1,             // + for beating a venue champion
+      lossPoints: 1,            // consolation points for a loss (you can always retry)
+      replayWinPoints: 2,       // points for rematches after the career is complete
+      oppBaseBudget: 22,        // opponent total stat points at fight 1
+      oppBudgetPerFight: 2.3,   // + per fight climbed (opponents get tougher)
+      oppBossBonus: 3,          // + for venue champions
+      oppMaxBudget: 50          // hard cap (5 stats x 10)
+    },
     HITSTOP: { jab: 2, hook: 4, uppercut: 6, knockdown: 12, block: 1 },
     SLOWMO: { scale: 0.25, knockdown: 28, finish: 70 },
 

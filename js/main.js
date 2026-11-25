@@ -1,7 +1,7 @@
 /* main.js - UI screens, renderer switching, fixed-timestep accumulator loop, debug overlay, and self-test. */
 (function (g) {
   'use strict';
-  var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio, Net = g.Net;
+  var C = g.Config, Boxers = g.Boxers, Sim = g.Sim, AI = g.AI, Input = g.Input, Audio = g.GameAudio, Net = g.Net, Career = g.Career;
 
   var DIFF_KEY = 'ironFistsDifficulty';
   var PROFILE_KEY = 'ironFistsEloProfile_v1';
@@ -85,6 +85,11 @@
     guestReady: false,
     profile: loadProfile(),
     leaderboard: loadLeaderboard(),
+    careerSave: Career ? Career.load() : null,
+    careerView: 'create',     // 'create' | 'hub'
+    careerDraft: null,
+    careerEditOnly: false,
+    careerFightIdx: -1,
     accumulator: 0,
     lastFrameTime: 0,
     bannerTimer: 0,
@@ -227,14 +232,22 @@
     if (app.renderer) app.renderer.resize();
     $('screen-title').classList.toggle('active', name === 'title');
     $('screen-select').classList.toggle('active', name === 'select');
+    var carSc = $('screen-career');
+    if (carSc) carSc.classList.toggle('active', name === 'career');
     $('screen-hud').classList.toggle('active', name === 'fight');
     hideModals();
     if (name === 'title') {
       app.priorKOs = [0, 0];
+      app.careerFightIdx = -1;
       startAttractFight();
     } else if (name === 'select') {
       app.priorKOs = [0, 0];
+      app.careerFightIdx = -1;
       renderSelectScreen();
+    } else if (name === 'career') {
+      app.priorKOs = [0, 0];
+      app.careerFightIdx = -1;
+      openCareer();
     }
   }
 
@@ -361,6 +374,245 @@
     buildRosterStrip(1);
     fillFighterPanel(0);
     fillFighterPanel(1);
+  }
+
+  // ------------------------------------------------------------------ Career Mode (Create + Hub + Fights)
+  function initCareerDraft(fromSave) {
+    if (fromSave) {
+      app.careerDraft = {
+        name: fromSave.name,
+        spec: fromSave.spec,
+        look: Object.assign({}, fromSave.look)
+      };
+    } else {
+      app.careerDraft = {
+        name: (app.profile && app.profile.name) || 'ROOKIE',
+        spec: Career.SPECS[0].id,
+        look: {
+          skin: Career.LOOKS.skin[2],
+          hairStyle: Career.LOOKS.hairStyle[0],
+          hair: Career.LOOKS.hair[0],
+          trunks: Career.LOOKS.trunks[0],
+          glove: Career.LOOKS.glove[0]
+        }
+      };
+    }
+  }
+
+  function openCareer(forceCreate) {
+    if (!Career) return;
+    app.careerSave = Career.load();
+    if (!app.careerSave || forceCreate) {
+      app.careerEditOnly = !!(app.careerSave && forceCreate);
+      initCareerDraft(app.careerEditOnly ? app.careerSave : null);
+      app.careerView = 'create';
+      renderCareerCreate();
+    } else {
+      app.careerEditOnly = false;
+      app.careerView = 'hub';
+      renderCareerHub();
+    }
+    $('career-create').classList.toggle('active', app.careerView === 'create');
+    $('career-hub').classList.toggle('active', app.careerView === 'hub');
+  }
+
+  function renderCareerStatsHtml(stats) {
+    return STAT_LABELS.map(function (pair) {
+      var val = stats[pair[0]] || 5;
+      return '<div class="stat-row">' +
+        '<span class="lbl">' + pair[1] + '</span>' +
+        '<div class="stat-track"><div class="stat-fill" style="width:' + (val * 10) + '%"></div></div>' +
+        '<span>' + val + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  function renderCareerCreate() {
+    var d = app.careerDraft;
+    if (!d) return;
+    $('car-create-title').textContent = app.careerEditOnly ? '✎ EDIT APPEARANCE' : '🥊 CREATE YOUR BOXER';
+    $('btn-car-create-go').textContent = app.careerEditOnly ? 'SAVE LOOK ✓' : 'START CAREER 🥊';
+    var nameInp = $('car-name');
+    if (nameInp && document.activeElement !== nameInp) nameInp.value = d.name;
+
+    // Specializations
+    var specsEl = $('car-specs');
+    specsEl.innerHTML = '';
+    Career.SPECS.forEach(function (sp) {
+      var btn = document.createElement('button');
+      btn.className = 'spec-card' + (d.spec === sp.id ? ' selected' : '');
+      btn.disabled = !!app.careerEditOnly;
+      btn.style.opacity = app.careerEditOnly && d.spec !== sp.id ? '0.45' : '1';
+      btn.innerHTML = '<div class="sp-top">' + sp.icon + ' ' + sp.name + '</div><div class="sp-blurb">' + sp.blurb + '</div>';
+      btn.addEventListener('click', function () {
+        if (app.careerEditOnly) return;
+        d.spec = sp.id;
+        renderCareerCreate();
+      });
+      specsEl.appendChild(btn);
+    });
+
+    function buildSwatches(elId, arr, prop) {
+      var wrap = $(elId);
+      wrap.innerHTML = '';
+      arr.forEach(function (col) {
+        var b = document.createElement('button');
+        b.className = 'swatch' + (d.look[prop] === col ? ' selected' : '');
+        b.style.background = col;
+        b.addEventListener('click', function () {
+          d.look[prop] = col;
+          renderCareerCreate();
+        });
+        wrap.appendChild(b);
+      });
+    }
+    buildSwatches('car-skin', Career.LOOKS.skin, 'skin');
+    buildSwatches('car-haircolor', Career.LOOKS.hair, 'hair');
+    buildSwatches('car-trunks', Career.LOOKS.trunks, 'trunks');
+    buildSwatches('car-gloves', Career.LOOKS.glove, 'glove');
+
+    var hsWrap = $('car-hairstyle');
+    hsWrap.innerHTML = '';
+    Career.LOOKS.hairStyle.forEach(function (st) {
+      var b = document.createElement('button');
+      b.className = 'chip' + (d.look.hairStyle === st ? ' selected' : '');
+      b.textContent = st;
+      b.addEventListener('click', function () {
+        d.look.hairStyle = st;
+        renderCareerCreate();
+      });
+      hsWrap.appendChild(b);
+    });
+
+    var previewStats = app.careerEditOnly && app.careerSave ? app.careerSave.stats : Career.specById(d.spec).stats;
+    $('car-create-stats').innerHTML = renderCareerStatsHtml(previewStats);
+  }
+
+  function renderCareerHub() {
+    var s = app.careerSave;
+    if (!s) return;
+    var spec = Career.specById(s.spec);
+    var champ = s.fight >= Career.totalFights();
+    var nextIdx = Career.currentOpponentIndex(s);
+    var vf = Career.venueFor(nextIdx);
+
+    $('car-hub-title').textContent = (champ ? '👑 ' : '🥊 ') + s.name + ' — ' + spec.name.toUpperCase();
+    $('car-record').textContent = 'RECORD: ' + s.wins + 'W - ' + s.losses + 'L (' + s.kos + ' KO) • FIGHT ' + Math.min(s.fight + 1, Career.totalFights()) + '/' + Career.totalFights();
+    $('car-points').textContent = s.points;
+
+    // Stat upgrade rows
+    var upgWrap = $('car-hub-stats');
+    upgWrap.innerHTML = '';
+    STAT_LABELS.forEach(function (pair) {
+      var key = pair[0], label = pair[1];
+      var val = s.stats[key];
+      var maxed = val >= C.CAREER.statCap;
+      var cost = Career.upgradeCost(val);
+      var can = Career.canUpgrade(s, key);
+      var row = document.createElement('div');
+      row.className = 'car-upg-row';
+      row.innerHTML =
+        '<span>' + label + '</span>' +
+        '<div class="stat-track"><div class="stat-fill" style="width:' + (val * 10) + '%"></div></div>' +
+        '<span>' + val + '</span>';
+      var btn = document.createElement('button');
+      btn.className = 'btn-upg';
+      btn.disabled = !can;
+      btn.textContent = maxed ? 'MAX' : ('+1 (' + cost + 'pt)');
+      btn.addEventListener('click', function () {
+        if (Audio) Audio.resume();
+        if (Career.upgrade(s, key)) renderCareerHub();
+      });
+      row.appendChild(btn);
+      upgWrap.appendChild(row);
+    });
+
+    // Venue climb ladder
+    var ladWrap = $('car-ladder');
+    ladWrap.innerHTML = '';
+    var fpv = C.CAREER.fightsPerVenue;
+    Career.VENUES.forEach(function (v, vIdx) {
+      var startF = vIdx * fpv;
+      var endF = startF + fpv;
+      var isDone = s.fight >= endF;
+      var isCur = !champ && s.fight >= startF && s.fight < endF;
+      var isLocked = s.fight < startF;
+      var row = document.createElement('div');
+      row.className = 'ladder-row' + (isDone ? ' done' : (isCur ? ' current' : (isLocked ? ' locked' : '')));
+      var pipsHtml = '';
+      for (var p = 0; p < fpv; p++) {
+        var fNum = startF + p;
+        var cls = 'lad-pip' + (s.fight > fNum ? ' win' : (s.fight === fNum ? ' next' : ''));
+        pipsHtml += '<span class="' + cls + '"></span>';
+      }
+      row.innerHTML =
+        '<div><div class="lad-name">' + v.icon + ' ' + v.name + (isDone ? ' ✓' : '') + '</div>' +
+        '<div class="lad-place">' + v.place + '</div></div>' +
+        '<div class="lad-pips">' + pipsHtml + '</div>';
+      ladWrap.appendChild(row);
+    });
+
+    // Next opponent card
+    var opp = Career.opponentDef(nextIdx);
+    $('car-next-label').textContent = champ ? 'TITLE DEFENSE (CHAMPION!)' : (vf.boss ? '👑 VENUE CHAMPION BOUT' : ('BOUT ' + vf.fightInVenue + ' OF ' + fpv));
+    $('car-next-venue').textContent = vf.venue.icon + ' ' + vf.venue.place;
+    $('car-opp-info').innerHTML =
+      '<div class="opp-name">' + escapeHtml(opp.name) + '</div>' +
+      '<div class="opp-nick">"' + escapeHtml(opp.nick) + '" • ' + escapeHtml(opp.style) + '</div>' +
+      '<div class="opp-bio">' + escapeHtml(opp.bio) + '</div>';
+    $('car-opp-stats').innerHTML = renderCareerStatsHtml(opp.stats);
+    $('btn-car-fight').textContent = champ ? 'DEFEND TITLE 🔔' : (vf.boss ? 'CHALLENGE BOSS 🔔' : 'FIGHT 🔔');
+  }
+
+  function startCareerFight() {
+    if (!Career || !app.careerSave) return;
+    if (Audio) Audio.resume();
+    var s = app.careerSave;
+    var idx = Career.currentOpponentIndex(s);
+    var vf = Career.venueFor(idx);
+    var pair = Career.register(s, idx);
+    var diff = Career.difficultyFor(idx);
+
+    app.careerFightIdx = idx;
+    app.vsMode = 'cpu';
+    Input.setTwoPlayer(false);
+    Input.reset();
+    app.seedCounter = (app.seedCounter + 37) | 0;
+
+    app.simState = Sim.create({
+      boxers: pair,
+      seed: app.seedCounter,
+      priorKOs: [0, 0],
+      vsCpu: true,
+      difficulty: diff,
+      venue: vf.venue.id
+    });
+    app.prevSimState = app.simState;
+    app.ai0 = null;
+    app.ai1 = AI.create({ index: 1, boxerId: pair[1], difficulty: diff, seed: app.seedCounter + 99 });
+    app.lastStepInputs = [copyInput({}), copyInput({})];
+    app.comboGrades = [];
+    app.onlineEventsQueue = [];
+    app.accumulator = 0;
+    app.paused = false;
+    app.resultShown = false;
+    app.lastRoundCard = null;
+
+    var B0 = Boxers.byId(pair[0]), B1 = Boxers.byId(pair[1]);
+    $('hud-flag-0').style.background = B0.country.css;
+    $('hud-name-0').textContent = B0.name + ' (YOU)';
+    $('hud-flag-1').style.background = B1.country.css;
+    $('hud-name-1').textContent = B1.name + (vf.boss ? ' (BOSS)' : ' (CPU)');
+
+    $('hud-controls-hint').innerHTML =
+      '<strong>Move:</strong> A/D or ←/→ &nbsp;•&nbsp; <strong>Jab:</strong> J &nbsp;•&nbsp; <strong>Hook:</strong> K &nbsp;•&nbsp; <strong>Uppercut:</strong> L &nbsp;•&nbsp; <strong>Block:</strong> S &nbsp;•&nbsp; <strong>Dodge:</strong> W/Space &nbsp;•&nbsp; <strong>Signature Combo:</strong> E';
+
+    showScreen('fight');
+    // Restore careerFightIdx (showScreen('fight') does not clear it, keeping it intact)
+    app.careerFightIdx = idx;
+    showBanner(vf.venue.name.toUpperCase() + ' — FIGHT!', 1.5);
+    if (Audio && app.simState.events.length) Audio.handle(app.simState.events);
+    updateHUD(app.simState);
   }
 
   // ------------------------------------------------------------------ Start / Manage Real Fight
@@ -697,7 +949,22 @@
     var wBoxer = Boxers.byId(s.boxers[res.winner]);
     var corner;
     var eloCallout = $('res-elo-callout');
-    if (app.vsMode === 'online' && Net && Net.isConnected()) {
+    var isCareerFight = (app.careerFightIdx >= 0 && Career && app.careerSave);
+    if (isCareerFight) {
+      var wonCar = (res.winner === 0);
+      corner = wonCar ? 'You Won!' : 'Career Opponent';
+      var cr = Career.applyResult(app.careerSave, app.careerFightIdx, wonCar, res.method);
+      if (eloCallout) {
+        eloCallout.style.display = 'inline-block';
+        if (cr.completed) {
+          eloCallout.textContent = '👑 WORLD CHAMPION! +' + cr.points + ' SKILL POINTS (TOTAL: ' + app.careerSave.points + ')';
+        } else if (cr.win) {
+          eloCallout.textContent = '🥊 CAREER WIN! +' + cr.points + ' SKILL POINTS (TOTAL: ' + app.careerSave.points + ')';
+        } else {
+          eloCallout.textContent = '💪 +' + cr.points + ' SKILL POINT — UPGRADE & RETRY! (TOTAL: ' + app.careerSave.points + ')';
+        }
+      }
+    } else if (app.vsMode === 'online' && Net && Net.isConnected()) {
       var localIdx = Net.getRole() === 'guest' ? 1 : 0;
       var wonOnline = (res.winner === localIdx);
       corner = wonOnline ? 'You Won!' : 'Online Opponent';
@@ -751,7 +1018,12 @@
         '<tr><td>' + f1.kdTot + '</td><td>Knockdowns Scored</td><td>' + f0.kdTot + '</td></tr>' +
       '</tbody>';
 
-    if ($('btn-rematch')) $('btn-rematch').textContent = 'REMATCH 🔔';
+    if ($('btn-rematch')) {
+      $('btn-rematch').textContent = 'REMATCH 🔔';
+      $('btn-rematch').style.display = isCareerFight ? 'none' : '';
+    }
+    if ($('btn-res-select')) $('btn-res-select').style.display = isCareerFight ? 'none' : '';
+    if ($('btn-res-career')) $('btn-res-career').style.display = isCareerFight ? '' : 'none';
     $('modal-result').classList.add('show');
   }
 
@@ -816,6 +1088,17 @@
       var t = now / 1000;
       g.BoxerArt.drawPreview($('preview-p1'), Boxers.byId(app.selected[0]), t, 1);
       g.BoxerArt.drawPreview($('preview-p2'), Boxers.byId(app.selected[1]), t + 1.2, -1);
+    } else if (app.screen === 'career' && Career) {
+      var tc = now / 1000;
+      if (app.careerView === 'create' && app.careerDraft) {
+        var cvCreate = $('preview-career');
+        if (cvCreate) g.BoxerArt.drawPreview(cvCreate, Career.draftDef(app.careerDraft.name, app.careerDraft.spec, app.careerDraft.look), tc, 1);
+      } else if (app.careerView === 'hub' && app.careerSave) {
+        var cvHub = $('preview-career-hub');
+        var cvOpp = $('preview-career-opp');
+        if (cvHub) g.BoxerArt.drawPreview(cvHub, Career.playerDef(app.careerSave), tc, 1);
+        if (cvOpp) g.BoxerArt.drawPreview(cvOpp, Career.opponentDef(Career.currentOpponentIndex(app.careerSave)), tc + 1.2, -1);
+      }
     }
 
     var pingBadge = $('net-ping-badge');
@@ -1445,6 +1728,33 @@
         'avg-player bot wins vs CPU Easy/Medium/Hard: ' + wins.easy + '/' + total + ', ' + wins.normal + '/' + total + ', ' + wins.hard + '/' + total + ' (KO finishes: ' + ko + ')'
       );
     })();
+
+    // 21. Career Mode: specializations differ, venues climb Backyard -> Stadium, skill points upgrade stats
+    (function () {
+      var backup = Career.load();
+      var sw = Career.blankSave('TESTER', 'swarmer', { skin: '#c68a5a', hairStyle: 'short', hair: '#0d0b0a', trunks: '#c4202a', glove: '#d92b35' });
+      var sl = Career.blankSave('TESTER', 'slugger', { skin: '#c68a5a', hairStyle: 'short', hair: '#0d0b0a', trunks: '#c4202a', glove: '#d92b35' });
+      var specsDiffer = sw.stats.speed > sl.stats.speed && sl.stats.power > sw.stats.power;
+      var v0 = Career.venueFor(0).venue.id;
+      var vLast = Career.venueFor(Career.totalFights() - 1).venue.id;
+      var opp0 = Career.opponentDef(0), oppLast = Career.opponentDef(Career.totalFights() - 1);
+      var oppSum0 = Career.STATS.reduce(function (acc, k) { return acc + opp0.stats[k]; }, 0);
+      var oppSumLast = Career.STATS.reduce(function (acc, k) { return acc + oppLast.stats[k]; }, 0);
+      var ptsBefore = sw.points;
+      var res = Career.applyResult(sw, 0, true, 'KO');
+      var powBefore = sw.stats.power;
+      var upgraded = Career.upgrade(sw, 'power');
+      var pair = Career.register(sw, 0);
+      var cSim = Sim.create({ boxers: pair, seed: 42, vsCpu: true, difficulty: Career.difficultyFor(0), venue: v0 });
+      if (backup) Career.save(backup); else Career.reset();
+      var ok = specsDiffer && v0 === 'backyard' && vLast === 'stadium' && oppSumLast > oppSum0 &&
+        res.points > 0 && sw.fight === 1 && upgraded && sw.stats.power === powBefore + 1 && cSim.venue === 'backyard';
+      check(
+        '21. Career Mode: distinct specs, Backyard -> Stadium climb, points & stat upgrades',
+        ok,
+        'venues=' + v0 + '->' + vLast + ', oppStats=' + oppSum0 + '->' + oppSumLast + ', ptsAwarded=' + res.points + ', pow=' + powBefore + '->' + sw.stats.power
+      );
+    })();
     var allPass = results.every(function (r) { return r.pass; });
     console.log('SELF-TEST SUMMARY: ' + (allPass ? 'ALL ' + results.length + ' PASSED' : 'FAILURES DETECTED'));
     showScreen('title');
@@ -1759,9 +2069,68 @@
     $('btn-select-back').addEventListener('click', function () { showScreen('title'); });
     $('btn-start-fight').addEventListener('click', function () { startMatch(); });
 
+    // Career Mode button wiring
+    var btnCareer = $('btn-career');
+    if (btnCareer) btnCareer.addEventListener('click', function () {
+      Audio.init();
+      showScreen('career');
+    });
+    var carNameInp = $('car-name');
+    if (carNameInp) carNameInp.addEventListener('input', function () {
+      if (app.careerDraft) app.careerDraft.name = String(carNameInp.value || '').toUpperCase().slice(0, 14);
+    });
+    var btnCarCreateBack = $('btn-car-create-back');
+    if (btnCarCreateBack) btnCarCreateBack.addEventListener('click', function () {
+      if (app.careerEditOnly && app.careerSave) {
+        openCareer(false);
+      } else {
+        showScreen('title');
+      }
+    });
+    var btnCarCreateGo = $('btn-car-create-go');
+    if (btnCarCreateGo) btnCarCreateGo.addEventListener('click', function () {
+      if (!Career || !app.careerDraft) return;
+      var nm = String(($('car-name') && $('car-name').value) || app.careerDraft.name || 'ROOKIE').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').trim().slice(0, 14) || 'ROOKIE';
+      app.careerDraft.name = nm;
+      if (app.careerEditOnly && app.careerSave) {
+        app.careerSave.name = nm;
+        app.careerSave.look = Object.assign({}, app.careerDraft.look);
+        Career.save(app.careerSave);
+      } else {
+        app.careerSave = Career.blankSave(nm, app.careerDraft.spec, app.careerDraft.look);
+        Career.save(app.careerSave);
+      }
+      openCareer(false);
+    });
+    var btnCarFight = $('btn-car-fight');
+    if (btnCarFight) btnCarFight.addEventListener('click', startCareerFight);
+    var btnCarHubBack = $('btn-car-hub-back');
+    if (btnCarHubBack) btnCarHubBack.addEventListener('click', function () { showScreen('title'); });
+    var btnCarLook = $('btn-car-look');
+    if (btnCarLook) btnCarLook.addEventListener('click', function () { openCareer(true); });
+    var btnCarReset = $('btn-car-reset');
+    if (btnCarReset) btnCarReset.addEventListener('click', function () {
+      if (!Career) return;
+      if (!window.confirm || window.confirm('Start a brand new Career from Backyard Brawls? Your current career progress will be reset.')) {
+        Career.reset();
+        app.careerSave = null;
+        openCareer(true);
+      }
+    });
+    var btnResCareer = $('btn-res-career');
+    if (btnResCareer) btnResCareer.addEventListener('click', function () {
+      hideModals();
+      showScreen('career');
+    });
+
     $('btn-pause').addEventListener('click', togglePause);
     $('btn-resume').addEventListener('click', togglePause);
     $('btn-restart').addEventListener('click', function () {
+      if (app.careerFightIdx >= 0) {
+        hideModals();
+        startCareerFight();
+        return;
+      }
       if (app.vsMode === 'online' && Net && Net.isConnected() && Net.getRole() === 'guest') {
         Net.send({ t: 'rematch' });
         hideModals();
@@ -1770,7 +2139,9 @@
       hideModals();
       startMatch();
     });
-    $('btn-pause-select').addEventListener('click', function () { showScreen('select'); });
+    $('btn-pause-select').addEventListener('click', function () {
+      showScreen(app.careerFightIdx >= 0 ? 'career' : 'select');
+    });
     $('btn-pause-title').addEventListener('click', function () { showScreen('title'); });
 
     function doSkipRest(fromRemote) {
@@ -1811,6 +2182,7 @@
     if (window.location && window.location.search) {
       var qs = window.location.search;
       if (qs.indexOf('screen=select') >= 0) showScreen('select');
+      if (qs.indexOf('screen=career') >= 0) showScreen('career');
       var roomMatch = qs.match(/[?&]room=([A-Za-z0-9]+)/);
       if (roomMatch && roomMatch[1] && Net) {
         var joinCode = roomMatch[1].toUpperCase();

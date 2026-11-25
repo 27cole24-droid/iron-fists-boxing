@@ -34,6 +34,7 @@
         <p class="title-sub">Precision Spacing • Stamina Chess • Counter-Punch Knockouts</p>
         <div class="title-actions">
           <button id="btn-enter" class="btn-primary">ENTER THE RING</button>
+          <button id="btn-career" class="btn-career">🥊 CAREER MODE</button>
           <button id="btn-how" class="btn-secondary">CONTROLS &amp; RULES</button>
         </div>
 
@@ -165,6 +166,77 @@
         <button id="btn-select-back" class="btn-secondary">← TITLE</button>
         <button id="btn-start-fight" class="btn-primary">START FIGHT 🔔</button>
       </footer>
+    </section>
+
+    <!-- 2b. CAREER MODE (create boxer + hub) -->
+    <section id="screen-career" class="screen">
+      <div class="career-wrap interactive">
+
+        <!-- Create / customize view -->
+        <div id="career-create" class="career-view">
+          <div class="career-head">
+            <div class="select-title" id="car-create-title">🥊 CREATE YOUR BOXER</div>
+            <div class="car-sub">Pick a specialization, style your fighter, then climb from the backyard to the world stage.</div>
+          </div>
+          <div class="career-grid">
+            <div class="career-card car-preview-card">
+              <canvas id="preview-career" width="240" height="280"></canvas>
+              <input id="car-name" class="car-name-inp" type="text" maxlength="14" placeholder="BOXER NAME" autocomplete="off" />
+              <div id="car-create-stats" class="stats-list"></div>
+            </div>
+            <div class="career-card">
+              <div class="car-label">SPECIALIZATION</div>
+              <div id="car-specs" class="car-specs"></div>
+              <div class="car-label">SKIN</div>
+              <div id="car-skin" class="swatch-row"></div>
+              <div class="car-label">HAIR STYLE</div>
+              <div id="car-hairstyle" class="chip-row"></div>
+              <div class="car-label">HAIR COLOR</div>
+              <div id="car-haircolor" class="swatch-row"></div>
+              <div class="car-label">TRUNKS</div>
+              <div id="car-trunks" class="swatch-row"></div>
+              <div class="car-label">GLOVES</div>
+              <div id="car-gloves" class="swatch-row"></div>
+            </div>
+          </div>
+          <div class="career-foot">
+            <button id="btn-car-create-back" class="btn-secondary">← BACK</button>
+            <button id="btn-car-create-go" class="btn-primary">START CAREER 🥊</button>
+          </div>
+        </div>
+
+        <!-- Hub view -->
+        <div id="career-hub" class="career-view">
+          <div class="career-head">
+            <div class="select-title" id="car-hub-title">CAREER</div>
+            <div class="car-record" id="car-record"></div>
+          </div>
+          <div class="career-grid hub">
+            <div class="career-card">
+              <canvas id="preview-career-hub" width="220" height="250"></canvas>
+              <div class="car-pts-row"><span>SKILL POINTS</span><strong id="car-points">0</strong></div>
+              <div id="car-hub-stats" class="car-upg-list"></div>
+            </div>
+            <div class="career-card">
+              <div class="car-label">THE CLIMB</div>
+              <div id="car-ladder" class="car-ladder"></div>
+            </div>
+            <div class="career-card">
+              <div class="car-label" id="car-next-label">NEXT FIGHT</div>
+              <div id="car-next-venue" class="car-next-venue"></div>
+              <canvas id="preview-career-opp" width="200" height="230"></canvas>
+              <div id="car-opp-info" class="car-opp-info"></div>
+              <div id="car-opp-stats" class="stats-list"></div>
+              <button id="btn-car-fight" class="btn-primary car-fight-btn">FIGHT 🔔</button>
+            </div>
+          </div>
+          <div class="career-foot">
+            <button id="btn-car-hub-back" class="btn-secondary">← TITLE</button>
+            <button id="btn-car-look" class="btn-secondary">✎ APPEARANCE</button>
+            <button id="btn-car-reset" class="btn-secondary danger-btn">RESET CAREER</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 3. IN-FIGHT HUD -->
@@ -342,6 +414,7 @@
         <div id="res-cards-wrap"></div>
         <table class="score-table" id="res-stats-table"></table>
         <div class="modal-actions">
+          <button id="btn-res-career" class="btn-primary" style="display:none;">CONTINUE CAREER ▶</button>
           <button id="btn-rematch" class="btn-primary">REMATCH 🔔</button>
           <button id="btn-res-select" class="btn-secondary">CHANGE BOXERS</button>
           <button id="btn-res-title" class="btn-secondary">TITLE SCREEN</button>
@@ -367,6 +440,7 @@
   <script src="js/audio.js"></script>
   <script src="js/input.js"></script>
   <script src="js/net.js"></script>
+  <script src="js/career.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

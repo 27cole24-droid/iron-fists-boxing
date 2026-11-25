@@ -173,6 +173,22 @@
     drawGlove(ctx, J.elbowF, J.gloveF, look.glove);
   }
 
+  // ------------------------------------------------------------------ venue themes (career mode; default = classic arena look)
+  var THEMES = {
+    def: { bg: ['#07080f', '#15112a', '#241a33'], crowd: 1, beams: 1, floor: ['#0a0912', '#17121f'], apron: ['#7c1823', '#5e111b', '#16090d'],
+      mat: ['#254577', '#3a62a3'], border: 'rgba(235,235,245,0.55)', rope: ['#d9363b', '#f1efe9', '#3566d8'], postA: '#c22a30', postB: '#2455c4', logo: 'IRON FISTS', fence: false },
+    backyard: { bg: ['#1d2b55', '#e9945a', '#5a3a2a'], crowd: 0, beams: 0.1, floor: ['#2c3b1f', '#243318'], apron: ['#4a3a24', '#3a2d1b', '#1a140c'],
+      mat: ['#3f7a3a', '#58a04a'], border: 'rgba(255,255,255,0.35)', rope: ['#d8c79a', '#d8c79a', '#d8c79a'], postA: '#7a5230', postB: '#7a5230', logo: 'BACKYARD', fence: true },
+    gym: { bg: ['#1a1a22', '#2a2630', '#3a3138'], crowd: 0.28, beams: 0.5, floor: ['#1a1512', '#2a211b'], apron: ['#5a3b22', '#432b19', '#1c120b'],
+      mat: ['#8a6a44', '#b58d5a'], border: 'rgba(255,240,210,0.45)', rope: ['#c0392b', '#f1efe9', '#c0392b'], postA: '#c22a30', postB: '#2455c4', logo: 'LOCAL GYM', fence: false },
+    warehouse: { bg: ['#05070a', '#0e141a', '#1a232b'], crowd: 0.5, beams: 0.7, floor: ['#06090c', '#10161b'], apron: ['#2a2f36', '#1e2328', '#0b0d10'],
+      mat: ['#2d3640', '#46525f'], border: 'rgba(255,200,80,0.4)', rope: ['#e7a928', '#e7a928', '#b8860b'], postA: '#8a8f98', postB: '#8a8f98', logo: 'WAREHOUSE', fence: false },
+    arena: { bg: ['#07080f', '#15112a', '#241a33'], crowd: 1, beams: 1.2, floor: ['#0a0912', '#17121f'], apron: ['#7c1823', '#5e111b', '#16090d'],
+      mat: ['#254577', '#3a62a3'], border: 'rgba(235,235,245,0.55)', rope: ['#d9363b', '#f1efe9', '#3566d8'], postA: '#c22a30', postB: '#2455c4', logo: 'CITY ARENA', fence: false },
+    stadium: { bg: ['#0a0618', '#2a1450', '#4a1f5e'], crowd: 1, beams: 1.9, floor: ['#0a0912', '#17121f'], apron: ['#8c6a12', '#6d500c', '#1c1405'],
+      mat: ['#1b3a7a', '#2f5bb3'], border: 'rgba(255,215,100,0.7)', rope: ['#f5c542', '#f1efe9', '#f5c542'], postA: '#f5c542', postB: '#f5c542', logo: 'CHAMPIONSHIP', fence: false }
+  };
+
   // ------------------------------------------------------------------ renderer
   function Renderer2D() {
     this.canvas = null; this.ctx = null; this.container = null;
@@ -379,21 +395,37 @@
 
     ctx.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr);
 
-    // ---- background
+    // ---- background (venue theme)
+    var T = THEMES[state.venue] || THEMES.def;
+    this.theme = T;
     var bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#07080f'); bg.addColorStop(0.5, '#15112a'); bg.addColorStop(1, '#241a33');
+    bg.addColorStop(0, T.bg[0]); bg.addColorStop(0.5, T.bg[1]); bg.addColorStop(1, T.bg[2]);
     ctx.fillStyle = bg; ctx.fillRect(-20, -20, W + 40, H + 40);
 
     // crowd
     var yBack = gy - 0.42 * S, crowdBottom = yBack - 0.55 * S;
     var par = -camX * S * 0.12;
     var ex = 1 + this.excite;
-    for (var L = 0; L < 2; L++) {
-      var bob = Math.sin(time * (1.3 + L * 0.7) + L) * 2.2 * ex * (L + 1);
-      ctx.drawImage(this.crowd[L], par - 40 + par * L * 0.4, crowdBottom - this.crowd[L].height + bob);
+    if (T.crowd > 0) {
+      ctx.save(); ctx.globalAlpha = T.crowd;
+      for (var L = 0; L < 2; L++) {
+        var bob = Math.sin(time * (1.3 + L * 0.7) + L) * 2.2 * ex * (L + 1);
+        ctx.drawImage(this.crowd[L], par - 40 + par * L * 0.4, crowdBottom - this.crowd[L].height + bob);
+      }
+      ctx.restore();
+    }
+    if (T.fence) {
+      // wooden backyard fence behind the ring
+      var fenceTop = crowdBottom - 1.5 * S, plank = Math.max(10, S * 0.26);
+      for (var fx = -plank + (par % plank); fx < W + plank; fx += plank) {
+        ctx.fillStyle = (Math.floor((fx - par) / plank) % 2) ? '#6b4a2b' : '#7a5632';
+        ctx.fillRect(fx, fenceTop, plank - 2, crowdBottom - fenceTop + S * 0.1);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(fx + plank - 4, fenceTop, 2, crowdBottom - fenceTop + S * 0.1);
+      }
+      ctx.fillStyle = '#4b3320'; ctx.fillRect(0, fenceTop + S * 0.25, W, S * 0.07); ctx.fillRect(0, crowdBottom - S * 0.25, W, S * 0.07);
     }
     // crowd camera flashes
-    if (Math.random() < 0.08 * ex && this.dots.length) this.flashDots.push({ d: this.dots[Math.floor(Math.random() * this.dots.length)], life: 3 });
+    if (T.crowd > 0.4 && Math.random() < 0.08 * ex && this.dots.length) this.flashDots.push({ d: this.dots[Math.floor(Math.random() * this.dots.length)], life: 3 });
     for (var fi = this.flashDots.length - 1; fi >= 0; fi--) {
       var fd = this.flashDots[fi];
       ctx.fillStyle = 'rgba(255,255,255,' + (0.35 + fd.life * 0.2) + ')';
@@ -402,7 +434,7 @@
     }
     // dark floor behind ring
     var floorG = ctx.createLinearGradient(0, crowdBottom, 0, H);
-    floorG.addColorStop(0, '#0a0912'); floorG.addColorStop(1, '#17121f');
+    floorG.addColorStop(0, T.floor[0]); floorG.addColorStop(1, T.floor[1]);
     ctx.fillStyle = floorG; ctx.fillRect(-20, crowdBottom, W + 40, H);
 
     // spot beams
@@ -410,7 +442,7 @@
     [0.22, 0.5, 0.78].forEach(function (fx, idx) {
       var tx = W * fx, bx = sx((idx - 1) * 1.8);
       var bgr = ctx.createLinearGradient(0, 0, 0, gy);
-      bgr.addColorStop(0, 'rgba(255,236,200,0.10)'); bgr.addColorStop(1, 'rgba(255,236,200,0.0)');
+      bgr.addColorStop(0, 'rgba(255,236,200,' + (0.10 * T.beams) + ')'); bgr.addColorStop(1, 'rgba(255,236,200,0.0)');
       ctx.fillStyle = bgr; ctx.beginPath(); ctx.moveTo(tx - 12, 0); ctx.lineTo(tx + 12, 0); ctx.lineTo(bx + S * 1.6, gy); ctx.lineTo(bx - S * 1.6, gy); ctx.closePath(); ctx.fill();
     });
     ctx.restore();
@@ -579,23 +611,24 @@
     var bx0 = sx(-3.3, 0.96) , bx1 = sx(3.3, 0.96), fx0 = sx(-3.65, 1.04), fx1 = sx(3.65, 1.04);
     // apron
     var apr = ctx.createLinearGradient(0, yFront, 0, H);
-    apr.addColorStop(0, '#7c1823'); apr.addColorStop(0.15, '#5e111b'); apr.addColorStop(1, '#16090d');
+    var TH = this.theme || THEMES.def;
+    apr.addColorStop(0, TH.apron[0]); apr.addColorStop(0.15, TH.apron[1]); apr.addColorStop(1, TH.apron[2]);
     ctx.fillStyle = apr; ctx.fillRect(fx0 - 80, yFront, fx1 - fx0 + 160, H - yFront + 10);
     ctx.fillStyle = '#e9e3d6'; ctx.fillRect(fx0 - 80, yFront, fx1 - fx0 + 160, Math.max(2, S * 0.025));
     // mat
     var mg = ctx.createLinearGradient(0, yBack, 0, yFront);
-    mg.addColorStop(0, '#254577'); mg.addColorStop(1, '#3a62a3');
+    mg.addColorStop(0, TH.mat[0]); mg.addColorStop(1, TH.mat[1]);
     ctx.fillStyle = mg;
     ctx.beginPath(); ctx.moveTo(bx0, yBack); ctx.lineTo(bx1, yBack); ctx.lineTo(fx1, yFront); ctx.lineTo(fx0, yFront); ctx.closePath(); ctx.fill();
     ctx.fillStyle = this.mat; ctx.fill();
     // border band
-    ctx.lineWidth = Math.max(2, S * 0.03); ctx.strokeStyle = 'rgba(235,235,245,0.55)';
+    ctx.lineWidth = Math.max(2, S * 0.03); ctx.strokeStyle = TH.border;
     ctx.beginPath(); ctx.moveTo(sx(-3.0, 0.97), yBack + S * 0.05); ctx.lineTo(sx(3.0, 0.97), yBack + S * 0.05); ctx.lineTo(sx(3.3, 1.03), yFront - S * 0.05); ctx.lineTo(sx(-3.3, 1.03), yFront - S * 0.05); ctx.closePath(); ctx.stroke();
     // center logo
     ctx.save(); ctx.translate(sx(0), gy); ctx.scale(1, 0.26);
     ctx.lineWidth = S * 0.05; ctx.strokeStyle = 'rgba(240,240,255,0.28)'; ctx.beginPath(); ctx.arc(0, 0, S * 1.35, 0, 6.2832); ctx.stroke();
     ctx.fillStyle = 'rgba(240,240,255,0.22)'; ctx.font = 'bold ' + Math.round(S * 0.62) + 'px Impact, "Arial Black", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('IRON FISTS', 0, 0);
+    ctx.fillText(TH.logo, 0, 0);
     ctx.restore();
     // floor light pool
     var lp = ctx.createRadialGradient(sx(0), gy, 1, sx(0), gy, S * 3.4);
@@ -603,7 +636,7 @@
     ctx.save(); ctx.translate(0, gy); ctx.scale(1, 0.32); ctx.translate(0, -gy); ctx.fillStyle = lp; ctx.beginPath(); ctx.arc(sx(0), gy, S * 3.4, 0, 6.2832); ctx.fill(); ctx.restore();
 
     // back posts + ropes
-    var d = 0.96, postTop = yBack - 1.62 * S * d, ropeH = [0.55, 0.98, 1.4], ropeCol = ['#d9363b', '#f1efe9', '#3566d8'];
+    var d = 0.96, postTop = yBack - 1.62 * S * d, ropeH = [0.55, 0.98, 1.4], ropeCol = TH.rope;
     var pw = Math.max(5, S * 0.085);
     for (var r = 0; r < 3; r++) {
       var ry = yBack - ropeH[r] * S * d;
@@ -613,7 +646,7 @@
       ctx.lineWidth = Math.max(1, S * 0.008); ctx.strokeStyle = 'rgba(255,255,255,0.35)';
       ctx.beginPath(); ctx.moveTo(bx0, ry - S * 0.008); ctx.quadraticCurveTo((bx0 + bx1) / 2, ry + S * 0.052, bx1, ry - S * 0.008); ctx.stroke();
     }
-    [[bx0, '#c22a30'], [bx1, '#2455c4']].forEach(function (p) {
+    [[bx0, TH.postA], [bx1, TH.postB]].forEach(function (p) {
       var pg = ctx.createLinearGradient(p[0] - pw, 0, p[0] + pw, 0);
       pg.addColorStop(0, '#444a58'); pg.addColorStop(0.5, '#9aa2b4'); pg.addColorStop(1, '#3a3f4c');
       ctx.fillStyle = pg; ctx.fillRect(p[0] - pw / 2, postTop, pw, yBack - postTop);
@@ -626,7 +659,8 @@
   };
 
   Renderer2D.prototype.drawRingFront = function (ctx, S, gy, W, H, sx) {
-    var yFront = gy + 0.4 * S, d = 1.04, ropeH = [0.55, 0.98, 1.4], ropeCol = ['#d9363b', '#f1efe9', '#3566d8'];
+    var TH = this.theme || THEMES.def;
+    var yFront = gy + 0.4 * S, d = 1.04, ropeH = [0.55, 0.98, 1.4], ropeCol = TH.rope;
     var x0 = sx(-3.65, d), x1 = sx(3.65, d), pw = Math.max(6, S * 0.1);
     ctx.save(); ctx.globalAlpha = 0.28;
     for (var r = 0; r < 3; r++) {
@@ -635,7 +669,7 @@
       ctx.lineWidth = Math.max(2, S * 0.032); ctx.strokeStyle = ropeCol[r]; ctx.stroke();
     }
     ctx.restore();
-    [[x0, '#c22a30'], [x1, '#2455c4']].forEach(function (p) {
+    [[x0, TH.postA], [x1, TH.postB]].forEach(function (p) {
       var top = yFront - 1.75 * S * d;
       var pg = ctx.createLinearGradient(p[0] - pw, 0, p[0] + pw, 0);
       pg.addColorStop(0, '#3a3f4c'); pg.addColorStop(0.5, '#a9b1c3'); pg.addColorStop(1, '#343946');

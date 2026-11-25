@@ -77,6 +77,7 @@
       fighters: [makeFighter(0, b0, -C.START_X, pKOs[0], humanAssist), makeFighter(1, b1, C.START_X, pKOs[1], null)],
       count: null, comboState: null, hitstop: 0, slowmo: 0, timeScale: 1,
       cpuMode: cpuDiff ? { human: 0, diff: cpuDiff } : null,
+      venue: opts.venue || null,   // optional visual theme id (career venues); renderers may read it
       events: [], rounds: [], result: null, boxers: [b0.id, b1.id]
     };
     s.events.push({ type: 'round_start', round: 1 });
