@@ -106,9 +106,9 @@
   // ------------------------------------------------------------------ venues & bouts
   var VENUES = [
     { id: 'backyard',  name: 'Backyard Brawls',          place: "Dad's Backyard",       icon: '🏡', diff: 'easy' },
-    { id: 'gym',       name: 'Local Gym Circuit',        place: 'Rusty Rec Center',     icon: '🏋️', diff: 'easy' },
+    { id: 'gym',       name: 'Local Gym Circuit',        place: 'Rusty Rec Center',     icon: '🏋️', diff: 'normal' },
     { id: 'warehouse', name: 'Underground Warehouse',    place: 'Pier 9 Warehouse',     icon: '🏭', diff: 'normal' },
-    { id: 'arena',     name: 'City Arena Series',        place: 'Metro City Arena',     icon: '🏟️', diff: 'normal' },
+    { id: 'arena',     name: 'City Arena Series',        place: 'Metro City Arena',     icon: '🏟️', diff: 'hard' },
     { id: 'stadium',   name: 'World Championship',       place: 'Iron Fists Stadium',   icon: '🏆', diff: 'hard' }
   ];
 

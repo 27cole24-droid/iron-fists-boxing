@@ -114,83 +114,81 @@
       allGreenBonusRefund: 10.0,// extra combo meter refunded if every hit is GREEN
 
       // CPU Timing accuracy on the Green Meter (per hit). Remaining probability = MISS (breaks the combo).
-      // Easy: mostly GOOD, some MISS, very few PERFECT. Medium ~ old Easy. Hard ~ old Medium.
-      cpuGreenProb: { easy: 0.04, normal: 0.12, hard: 0.26 },
-      cpuGoodProb:  { easy: 0.62, normal: 0.50, hard: 0.46 }
+      cpuGreenProb: { easy: 0.10, normal: 0.24, hard: 0.42 },
+      cpuGoodProb:  { easy: 0.58, normal: 0.48, hard: 0.42 }
       // (How often the CPU ACTIVATES its combo is controlled by CPU_DIFF.sigChance / sigDelayFrames below.)
     },
 
     // ======================================================================
     // VS CPU DIFFICULTY (applies ONLY in VS CPU mode; Local 2 Player is untouched)
-    // Keys: easy (default, very forgiving) | normal = "Medium" (~old Easy) | hard (~old Medium)
+    // Keys: easy (default) | normal = "Medium" | hard
     // ======================================================================
     CPU_DIFF: {
-      //            reaction delay frames | share of attacks it reacts to with block / dodge / punish
       easy: {
-        react: 30,            // frames of reaction delay (60 = 1s). Higher = slower to respond to the human
-        blockP: 0.22,         // chance to answer an incoming punch with a block (~15-25% of the time overall)
-        dodgeP: 0.04,         // chance to answer with a dodge (rare)
-        punishP: 0.10,        // chance to punish the human's recovery
-        mash: 3.0,            // legacy/unused hint
-        mistake: 0.40,        // chance to completely ignore an incoming punch
-        aggr: 1.00,           // how often it chooses to attack (fewer punches per second)
-        guard: 0.30,          // multiplier on how often it sits in a guard stance
-        comboCap: 2,          // max punches in a CPU chain
-        planMul: 2.0,         // longer plans = slower decisions
-        sigChance: 0.006,     // per-step chance to fire the signature combo once eligible (~1/4 of old Easy)
-        sigDelayFrames: 300,  // must be READY this many frames (5s) before it will ever use the combo
-        punchCool: 14,        // frames between its punches in a chain
-        rangeErr: 0.25,       // throws from up to +35% too far away -> whiffs
-        prefErr: 0.55,        // +/- meters it misjudges its preferred fighting distance (walks too close/far)
-        idleW: 1.2,           // weight of the "just stand there" plan
-        retreatW: 1.0,        // extra weight of retreating for no reason
-        freezePerSec: 0.25,   // seeded chance per second to freeze up / throw a silly punch
-        freezeMin: 12,        // freeze duration (frames), min
-        freezeMax: 40,        // freeze duration (frames), max
-        sillyWhiffP: 0.25,    // chance a freeze also throws a random jab
-        blockHold: 10,        // frames a reactive block is held (drops the guard quickly)
-        counterP: 0.12,       // chance to counter after a successful dodge
-        tiredUpper: 2.5,      // weight of hooks/uppercuts it still throws while tired (wastes stamina)
-        tiredAttack: 0.8,     // attack weight while tired (normal/hard ~0.08)
-        restW: 0.8,           // weight of resting when tired (normal/hard 4)
-        restThresh: 0.15      // stops to rest only when stamina < punch cost * this (normal/hard 1.1)
+        react: 19,            // frames of reaction delay (60 = 1s). Faster reactions than before
+        blockP: 0.36,         // chance to answer an incoming punch with a block
+        dodgeP: 0.14,         // chance to answer with a dodge
+        punishP: 0.30,        // chance to punish the human's recovery
+        mash: 3.5,            // legacy/unused hint
+        mistake: 0.22,        // chance to ignore an incoming punch
+        aggr: 1.15,           // active offense
+        guard: 0.55,          // multiplier on how often it sits in a guard stance
+        comboCap: 3,          // max punches in a CPU chain
+        planMul: 1.35,        // faster decision cycles
+        sigChance: 0.015,     // per-step chance to fire the signature combo once eligible
+        sigDelayFrames: 140,  // frames READY before using combo
+        punchCool: 9,         // frames between its punches in a chain
+        rangeErr: 0.10,       // slight range misjudgment
+        prefErr: 0.20,        // slight spacing variance
+        idleW: 0.35,          // brief pauses
+        retreatW: 0.25,       // occasional step-back
+        freezePerSec: 0.08,   // rare brief hesitation
+        freezeMin: 8,         // freeze duration (frames), min
+        freezeMax: 20,        // freeze duration (frames), max
+        sillyWhiffP: 0.15,    // chance a hesitation throws a probing jab
+        blockHold: 18,        // frames a reactive block is held
+        counterP: 0.45,       // chance to counter after a successful dodge
+        tiredUpper: 0.6,      // moderate stamina management
+        tiredAttack: 0.35,    // attacks less recklessly when tired
+        restW: 2.5,           // rests to recover stamina
+        restThresh: 0.6       // stops attacking when low on stamina
       },
       normal: {
-        react: 22, blockP: 0.30, dodgeP: 0.20, punishP: 0.40, mash: 4.2, mistake: 0.28, aggr: 0.8, guard: 0.7,
-        comboCap: 2, planMul: 1.5, sigChance: 0.025, sigDelayFrames: 120, punchCool: 7, rangeErr: 0.08, prefErr: 0.15,
-        idleW: 0.6, retreatW: 0.3, freezePerSec: 0.1, freezeMin: 8, freezeMax: 20, sillyWhiffP: 0.2, blockHold: 24,
-        counterP: 0.75, tiredUpper: 0.2, tiredAttack: 0.08, restW: 4, restThresh: 1.1
+        react: 13, blockP: 0.52, dodgeP: 0.32, punishP: 0.58, mash: 4.8, mistake: 0.12, aggr: 1.10, guard: 0.85,
+        comboCap: 4, planMul: 1.0, sigChance: 0.045, sigDelayFrames: 60, punchCool: 6, rangeErr: 0.02, prefErr: 0.05,
+        idleW: 0.05, retreatW: 0.05, freezePerSec: 0.0, freezeMin: 0, freezeMax: 0, sillyWhiffP: 0.0, blockHold: 26,
+        counterP: 0.85, tiredUpper: 0.2, tiredAttack: 0.08, restW: 4, restThresh: 1.1
       },
       hard: {
-        react: 14, blockP: 0.55, dodgeP: 0.40, punishP: 0.70, mash: 5.2, mistake: 0.12, aggr: 1.0, guard: 1.0,
-        comboCap: 3, planMul: 1.0, sigChance: 0.065, sigDelayFrames: 45, punchCool: 5, rangeErr: 0.0, prefErr: 0.0,
+        react: 7, blockP: 0.72, dodgeP: 0.52, punishP: 0.85, mash: 6.0, mistake: 0.04, aggr: 1.25, guard: 1.15,
+        comboCap: 5, planMul: 0.75, sigChance: 0.11, sigDelayFrames: 20, punchCool: 4, rangeErr: 0.0, prefErr: 0.0,
         idleW: 0.0, retreatW: 0.0, freezePerSec: 0.0, freezeMin: 0, freezeMax: 0, sillyWhiffP: 0.0, blockHold: 28,
-        counterP: 1.0, tiredUpper: 0.2, tiredAttack: 0.08, restW: 4, restThresh: 1.1
+        counterP: 1.0, tiredUpper: 0.15, tiredAttack: 0.06, restW: 4, restThresh: 1.1
       }
     },
 
     // Human-only advantages in VS CPU mode (never applied to the CPU or in Local 2 Player).
     ASSIST: {
       easy: {
-        dmgDealt: 1.25,            // human damage dealt multiplier
-        dmgTaken: 0.70,            // human damage taken multiplier
-        regenMul: 1.25,            // human stamina regen multiplier
-        momentumMul: 1.30,         // human combo-meter gain multiplier
-        greenZoneMul: 1.30,        // human green + good zone size multiplier on the timing meter
-        cursorSlow: 1.25,          // human timing cursor takes 25% longer to sweep (= ~20% slower)
-        getupDrainMul: 0.75,       // human get-up meter drains 25% slower
-        getupGainMul: 1.25,        // each human get-up press adds 25% more
-        getupRamp: 0.60,           // knockdown difficulty level ramps at 60% speed for the human
-        hitRangeBonus: 0.05,       // meters added to the human's punch range (a few pixels)
-        perfectBlockBonus: 4,      // extra frames in the human's perfect-block window
-        dodgeIFrameBonus: 3        // extra i-frames on the human's dodge
+        dmgDealt: 1.08,            // slight human damage dealt edge on Easy
+        dmgTaken: 0.88,            // slight human damage reduction on Easy
+        regenMul: 1.22,            // human stamina regen multiplier
+        momentumMul: 1.28,         // human combo-meter gain multiplier
+        greenZoneMul: 1.28,        // human green + good zone size multiplier on the timing meter
+        cursorSlow: 1.20,          // human timing cursor slightly slower on Easy
+        getupDrainMul: 0.78,       // human get-up meter drains 22% slower
+        getupGainMul: 1.18,        // each human get-up press adds 18% more
+        getupRamp: 0.70,           // knockdown difficulty level ramps at 70% speed for the human
+        hitRangeBonus: 0.03,       // meters added to the human's punch range
+        perfectBlockBonus: 3,      // extra frames in the human's perfect-block window
+        dodgeIFrameBonus: 2        // extra i-frames on the human's dodge
       },
       normal: {
-        dmgDealt: 1.10, dmgTaken: 0.85, regenMul: 1.10, momentumMul: 1.12, greenZoneMul: 1.12, cursorSlow: 1.08,
-        getupDrainMul: 0.90, getupGainMul: 1.10, getupRamp: 0.85, hitRangeBonus: 0.02, perfectBlockBonus: 2, dodgeIFrameBonus: 1
+        dmgDealt: 1.00, dmgTaken: 1.00, regenMul: 1.05, momentumMul: 1.05, greenZoneMul: 1.06, cursorSlow: 1.04,
+        getupDrainMul: 0.95, getupGainMul: 1.05, getupRamp: 0.90, hitRangeBonus: 0.01, perfectBlockBonus: 1, dodgeIFrameBonus: 1
       },
       hard: {
-        dmgDealt: 1.0, dmgTaken: 1.0, regenMul: 1.0, momentumMul: 1.0, greenZoneMul: 1.0, cursorSlow: 1.0,
+        dmgDealt: 1.00, dmgTaken: 1.05, regenMul: 1.0, momentumMul: 1.0, greenZoneMul: 1.0, cursorSlow: 1.0,
         getupDrainMul: 1.0, getupGainMul: 1.0, getupRamp: 1.0, hitRangeBonus: 0, perfectBlockBonus: 0, dodgeIFrameBonus: 0
       }
     },
@@ -229,7 +227,7 @@
       staminaMinFrac: 0.22,     // minimum stamina fraction when rising after many knockdowns
 
       // CPU Get-Up simulation (presses/sec before random variance)
-      cpuMashBase: { easy: 5.0, normal: 6.4, hard: 7.4 }, // CPU presses/sec at Chin 5 (needs ~6.1/s to beat the 1st count, so Easy CPU mostly stays down)
+      cpuMashBase: { easy: 6.2, normal: 7.4, hard: 8.8 }, // CPU presses/sec at Chin 5 (bots fight to beat the 1st count!)
       cpuMashChinBonus: 0.24,   // extra presses/sec per Chin point above 5
       cpuMashVariance: 1.8      // random +/- presses/sec modulation from seeded RNG
     },
@@ -248,8 +246,8 @@
       bossBonus: 1,             // + for beating a venue champion
       lossPoints: 1,            // consolation points for a loss (you can always retry)
       replayWinPoints: 2,       // points for rematches after the career is complete
-      oppBaseBudget: 22,        // opponent total stat points at fight 1
-      oppBudgetPerFight: 2.3,   // + per fight climbed (opponents get tougher)
+      oppBaseBudget: 26,        // opponent total stat points at fight 1
+      oppBudgetPerFight: 2.1,   // + per fight climbed (opponents get tougher)
       oppBossBonus: 3,          // + for venue champions
       oppMaxBudget: 50          // hard cap (5 stats x 10)
     },
