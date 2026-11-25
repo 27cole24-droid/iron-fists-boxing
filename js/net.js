@@ -1,25 +1,46 @@
-/* net.js - Zero-Dependency Multi-Broker WebSocket Online Multiplayer Manager.
+/* net.js - School-Firewall-Proof Multi-Transport Online Multiplayer Manager.
  *
- * Uses built-in WebSockets (MQTT v3.1.1 over WSS) connected in parallel to public
- * cloud brokers (EMQX + HiveMQ + Mosquitto) plus local BroadcastChannel so:
- *   - No external CDN script (PeerJS) can fail or be blocked by ad-blockers
- *   - No WebRTC NAT / STUN / TURN hole-punching failures on 4G/5G phones or school Wi-Fi
- *   - Whichever broker delivers each packet first wins (deduplicated by sequence number)
+ * Uses 4 layered transports in parallel (deduplicated by sender sequence number) so
+ * Online Mode works everywhere — home Wi-Fi, 4G/5G cellular, AND strict school Wi-Fi:
+ *   1. Port-443 MQTT-over-WSS (public.cloud.shiftr.io:443) + backup MQTT brokers
+ *      (broker.emqx.io:8084, test.mosquitto.org:8081) with automatic reconnect.
+ *   2. Same-Origin HTTPS Port-443 SSE + POST Relay (/api/relay on ironfistboxing.club)
+ *      via Netlify Edge Functions — impossible for school firewalls to block because
+ *      it uses the exact same domain and port 443 as the game itself.
+ *   3. Automatic Direct WebRTC RTCDataChannel upgrade (with Google STUN + OpenRelay
+ *      port-443 TCP/TLS TURN) for ultra-low-latency, zero-rate-limit 30Hz gameplay
+ *      once two players meet via any signaling channel.
+ *   4. BroadcastChannel for instant local multi-tab testing.
  *
  * Supports:
- *   1. Host Room (4-character Room Code + ?room=CODE invite link)
- *   2. Join Room (connects to a 4-character Room Code; if two friends both type the same
- *      code and click Join, one automatically becomes Host and they still connect!)
- *   3. Quick Match (live heartbeat lobby that pairs any two searching players in <1s)
+ *   - Host Room (4-character Room Code + ?room=CODE invite link)
+ *   - Join Room (if two friends both click Join with the same code, one auto-hosts!)
+ *   - Quick Match (live heartbeat lobby that pairs any two searching players in <1s)
+ *   - Global Top 3 Elo Leaderboard sync
  */
 (function (g) {
   'use strict';
 
   var BROKERS = [
-    'wss://broker.emqx.io:8084/mqtt',
-    'wss://broker.hivemq.com:8884/mqtt',
-    'wss://test.mosquitto.org:8081/mqtt'
+    { url: 'wss://public.cloud.shiftr.io:443', user: 'public', pass: 'public' },
+    { url: 'wss://broker.emqx.io:8084/mqtt' },
+    { url: 'wss://test.mosquitto.org:8081/mqtt' }
   ];
+  var ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+        'turns:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ];
+
   var TOPIC_LOBBY = 'ironfists/v3/lobby';
   var TOPIC_ROOM_PREFIX = 'ironfists/v3/room/';
   var TOPIC_LEADERBOARD = 'ironfists/v3/leaderboard/top3';
@@ -44,6 +65,24 @@
   var activeTopic = null;
   var heartbeatTimer = null;
   var stepSendCount = 0;
+  var pendingLeaderboardJson = null;
+
+  // Same-Origin HTTPS Port-443 SSE + POST relay state (works behind strict school firewalls)
+  var canUseSameOriginRelay = (typeof g.location !== 'undefined' &&
+    (g.location.protocol === 'https:' || g.location.protocol === 'http:') &&
+    g.location.hostname !== 'localhost' && g.location.hostname !== '127.0.0.1');
+  var sseSource = null;
+  var sseTopic = null;
+  var sseReady = false;
+  var lastHttpDataTx = 0;
+  var lastHttpKeepaliveTx = 0;
+
+  // Direct WebRTC DataChannel upgrade state
+  var rtcPc = null;
+  var rtcDc = null;
+  var rtcReady = false;
+  var rtcPendingIce = [];
+  var rtcStarted = false;
 
   // Latched remote input state (for Host consuming Guest's inputs at 60Hz)
   var remoteHold = { left: false, right: false, block: false };
@@ -90,13 +129,26 @@
     return out;
   }
 
-  function createMqttSocket(url) {
+  function encMqttStr(str) {
+    var b = strToUtf8(str);
+    var out = new Uint8Array(2 + b.length);
+    out[0] = (b.length >> 8) & 255;
+    out[1] = b.length & 255;
+    out.set(b, 2);
+    return out;
+  }
+
+  function createMqttSocket(cfg) {
+    var url = cfg.url;
+    var user = cfg.user || '';
+    var pass = cfg.pass || '';
     var ws = null;
     var isReady = false;
     var closed = false;
     var buf = new Uint8Array(0);
     var subId = 1;
     var pingInterval = null;
+    var reconnectTimer = null;
     var currentTopic = null;
 
     var client = {
@@ -141,6 +193,7 @@
         closed = true;
         isReady = false;
         if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (ws) {
           try { ws.close(); } catch (_) {}
           ws = null;
@@ -148,80 +201,286 @@
       }
     };
 
-    try {
-      ws = new g.WebSocket(url, 'mqtt');
-      ws.binaryType = 'arraybuffer';
-    } catch (_) {
-      return client;
+    function scheduleReconnect() {
+      if (closed || reconnectTimer) return;
+      reconnectTimer = setTimeout(function () {
+        reconnectTimer = null;
+        if (!closed) connectWs();
+      }, 4000);
     }
 
-    ws.onopen = function () {
+    function connectWs() {
       if (closed) return;
-      var cid = strToUtf8(myId + '_' + Math.floor(Math.random() * 999));
-      var header = [0, 4, 77, 81, 84, 84, 4, 2, 0, 45, (cid.length >> 8) & 255, cid.length & 255];
-      var rem = header.length + cid.length;
-      var vh = encVarLen(rem);
-      var pkt = new Uint8Array(1 + vh.length + rem);
-      pkt[0] = 0x10;
-      pkt.set(vh, 1);
-      pkt.set(header, 1 + vh.length);
-      pkt.set(cid, 1 + vh.length + header.length);
-      try { ws.send(pkt); } catch (_) {}
-    };
-
-    ws.onmessage = function (ev) {
-      if (closed || !ev.data) return;
-      var incoming = new Uint8Array(ev.data);
-      var merged = new Uint8Array(buf.length + incoming.length);
-      merged.set(buf, 0);
-      merged.set(incoming, buf.length);
-      buf = merged;
-
-      while (buf.length >= 2) {
-        var type = buf[0] >> 4;
-        var mult = 1, rem = 0, idx = 1, b;
-        do {
-          if (idx >= buf.length) return;
-          b = buf[idx++];
-          rem += (b & 127) * mult;
-          mult *= 128;
-        } while ((b & 128) !== 0);
-        if (buf.length < idx + rem) return;
-        var payload = buf.subarray(idx, idx + rem);
-        buf = buf.subarray(idx + rem);
-
-        if (type === 2) {
-          // CONNACK -> broker ready! Always subscribe to the global Top 3 Elo Leaderboard
-          isReady = true;
-          client.subscribe(TOPIC_LEADERBOARD, true);
-          if (currentTopic) client.subscribe(currentTopic);
-          if (pendingLeaderboardJson) client.publish(TOPIC_LEADERBOARD, pendingLeaderboardJson, true);
-          onAnyBrokerReady();
-          if (pingInterval) clearInterval(pingInterval);
-          pingInterval = setInterval(function () {
-            if (isReady && ws) {
-              try { ws.send(new Uint8Array([0xc0, 0x00])); } catch (_) {}
-            }
-          }, 20000);
-        } else if (type === 3) {
-          // PUBLISH
-          var tlen = (payload[0] << 8) | payload[1];
-          var topicStr = utf8ToStr(payload.subarray(2, 2 + tlen));
-          var msgStr = utf8ToStr(payload.subarray(2 + tlen));
-          handleRawPacket(topicStr, msgStr);
-        }
+      buf = new Uint8Array(0);
+      try {
+        ws = new g.WebSocket(url, 'mqtt');
+        ws.binaryType = 'arraybuffer';
+      } catch (_) {
+        scheduleReconnect();
+        return;
       }
-    };
 
-    ws.onerror = function () {};
-    ws.onclose = function () {
-      isReady = false;
-      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-    };
+      ws.onopen = function () {
+        if (closed) return;
+        var cidPart = encMqttStr(myId + '_' + Math.floor(Math.random() * 999));
+        var hasAuth = !!(user && pass);
+        var userPart = hasAuth ? encMqttStr(user) : new Uint8Array(0);
+        var passPart = hasAuth ? encMqttStr(pass) : new Uint8Array(0);
+        var flags = hasAuth ? 0xC2 : 0x02;
+        var vh = [0, 4, 77, 81, 84, 84, 4, flags, 0, 45];
+        var rem = vh.length + cidPart.length + userPart.length + passPart.length;
+        var vl = encVarLen(rem);
+        var pkt = new Uint8Array(1 + vl.length + rem);
+        pkt[0] = 0x10;
+        pkt.set(vl, 1);
+        var o = 1 + vl.length;
+        pkt.set(vh, o); o += vh.length;
+        pkt.set(cidPart, o); o += cidPart.length;
+        if (hasAuth) {
+          pkt.set(userPart, o); o += userPart.length;
+          pkt.set(passPart, o);
+        }
+        try { ws.send(pkt); } catch (_) {}
+      };
 
+      ws.onmessage = function (ev) {
+        if (closed || !ev.data) return;
+        var incoming = new Uint8Array(ev.data);
+        var merged = new Uint8Array(buf.length + incoming.length);
+        merged.set(buf, 0);
+        merged.set(incoming, buf.length);
+        buf = merged;
+
+        while (buf.length >= 2) {
+          var type = buf[0] >> 4;
+          var mult = 1, rem = 0, idx = 1, b;
+          do {
+            if (idx >= buf.length) return;
+            b = buf[idx++];
+            rem += (b & 127) * mult;
+            mult *= 128;
+          } while ((b & 128) !== 0);
+          if (buf.length < idx + rem) return;
+          var payload = buf.subarray(idx, idx + rem);
+          buf = buf.subarray(idx + rem);
+
+          if (type === 2) {
+            isReady = true;
+            client.subscribe(TOPIC_LEADERBOARD, true);
+            if (currentTopic) client.subscribe(currentTopic);
+            if (pendingLeaderboardJson) client.publish(TOPIC_LEADERBOARD, pendingLeaderboardJson, true);
+            onAnyTransportReady();
+            if (pingInterval) clearInterval(pingInterval);
+            pingInterval = setInterval(function () {
+              if (isReady && ws) {
+                try { ws.send(new Uint8Array([0xc0, 0x00])); } catch (_) {}
+              }
+            }, 20000);
+          } else if (type === 3) {
+            var tlen = (payload[0] << 8) | payload[1];
+            var topicStr = utf8ToStr(payload.subarray(2, 2 + tlen));
+            var msgStr = utf8ToStr(payload.subarray(2 + tlen));
+            handleRawPacket(topicStr, msgStr);
+          }
+        }
+      };
+
+      ws.onerror = function () {};
+      ws.onclose = function () {
+        isReady = false;
+        if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+        scheduleReconnect();
+      };
+    }
+
+    connectWs();
     return client;
   }
 
+  // ------------------------------------------------------------------ Same-Origin HTTPS Port-443 Relay (/api/relay)
+  function topicToRelayKey(topic) {
+    return String(topic || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  function closeSseRelay() {
+    if (sseSource) {
+      try { sseSource.close(); } catch (_) {}
+      sseSource = null;
+    }
+    sseTopic = null;
+    sseReady = false;
+  }
+
+  function openSseRelay(topic) {
+    if (!canUseSameOriginRelay || typeof g.EventSource !== 'function') return;
+    if (sseSource && sseTopic === topic) return;
+    closeSseRelay();
+    sseTopic = topic;
+    try {
+      var url = '/api/relay?topic=' + encodeURIComponent(topicToRelayKey(topic));
+      sseSource = new g.EventSource(url);
+      sseSource.addEventListener('open', function () {
+        sseReady = true;
+        onAnyTransportReady();
+      });
+      sseSource.onmessage = function (ev) {
+        if (!ev || !ev.data) return;
+        try {
+          var env = JSON.parse(ev.data);
+          if (env && env.event === 'message' && env.message) {
+            handleRawPacket(topic, env.message);
+          }
+        } catch (_) {}
+      };
+      sseSource.onerror = function () {
+        // EventSource auto-reconnects natively
+      };
+    } catch (_) {
+      sseReady = false;
+    }
+  }
+
+  function postSseRelay(topic, jsonStr) {
+    if (!canUseSameOriginRelay || typeof g.fetch !== 'function') return;
+    try {
+      g.fetch('/api/relay?topic=' + encodeURIComponent(topicToRelayKey(topic)), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: jsonStr,
+        keepalive: false
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------------------ Direct WebRTC DataChannel Upgrade
+  function closeWebRTC() {
+    rtcReady = false;
+    rtcStarted = false;
+    rtcPendingIce = [];
+    if (rtcDc) {
+      try { rtcDc.close(); } catch (_) {}
+      rtcDc = null;
+    }
+    if (rtcPc) {
+      try { rtcPc.close(); } catch (_) {}
+      rtcPc = null;
+    }
+  }
+
+  function wireDataChannel(dc) {
+    rtcDc = dc;
+    dc.onopen = function () {
+      rtcReady = true;
+    };
+    dc.onclose = function () {
+      rtcReady = false;
+    };
+    dc.onerror = function () {
+      rtcReady = false;
+    };
+    dc.onmessage = function (ev) {
+      if (ev && typeof ev.data === 'string' && activeTopic) {
+        handleRawPacket(activeTopic, ev.data);
+      }
+    };
+  }
+
+  function createPeerConn() {
+    var RTC = g.RTCPeerConnection || g.webkitRTCPeerConnection;
+    if (!RTC) return null;
+    try {
+      var pc = new RTC({ iceServers: ICE_SERVERS });
+      pc.onicecandidate = function (ev) {
+        if (ev && ev.candidate && connected && activeTopic && peerId) {
+          publishSignaling(activeTopic, {
+            t: 'rtc_ice',
+            to: peerId,
+            cand: ev.candidate.toJSON ? ev.candidate.toJSON() : {
+              candidate: ev.candidate.candidate,
+              sdpMid: ev.candidate.sdpMid,
+              sdpMLineIndex: ev.candidate.sdpMLineIndex
+            }
+          });
+        }
+      };
+      pc.ondatachannel = function (ev) {
+        if (ev && ev.channel) wireDataChannel(ev.channel);
+      };
+      pc.onconnectionstatechange = function () {
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          rtcReady = false;
+        }
+      };
+      return pc;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function startWebRTC() {
+    if (rtcStarted || !connected || !peerId) return;
+    rtcStarted = true;
+    if (role !== 'host') return; // Host initiates the offer; Guest answers on rtc_offer
+    rtcPc = createPeerConn();
+    if (!rtcPc) return;
+    try {
+      var dc = rtcPc.createDataChannel('ironfists', { ordered: false, maxRetransmits: 0 });
+      wireDataChannel(dc);
+      rtcPc.createOffer().then(function (offer) {
+        return rtcPc.setLocalDescription(offer).then(function () {
+          if (connected && activeTopic && peerId) {
+            publishSignaling(activeTopic, { t: 'rtc_offer', to: peerId, sdp: offer.sdp });
+          }
+        });
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  function handleRtcOffer(sdp) {
+    if (!connected || !peerId) return;
+    if (!rtcPc) rtcPc = createPeerConn();
+    if (!rtcPc) return;
+    try {
+      rtcPc.setRemoteDescription({ type: 'offer', sdp: sdp }).then(function () {
+        flushPendingIce();
+        return rtcPc.createAnswer();
+      }).then(function (answer) {
+        return rtcPc.setLocalDescription(answer).then(function () {
+          if (connected && activeTopic && peerId) {
+            publishSignaling(activeTopic, { t: 'rtc_answer', to: peerId, sdp: answer.sdp });
+          }
+        });
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  function handleRtcAnswer(sdp) {
+    if (!rtcPc) return;
+    try {
+      rtcPc.setRemoteDescription({ type: 'answer', sdp: sdp }).then(function () {
+        flushPendingIce();
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  function handleRtcIce(cand) {
+    if (!cand) return;
+    if (rtcPc && rtcPc.remoteDescription) {
+      try { rtcPc.addIceCandidate(cand).catch(function () {}); } catch (_) {}
+    } else {
+      rtcPendingIce.push(cand);
+    }
+  }
+
+  function flushPendingIce() {
+    if (!rtcPc || !rtcPc.remoteDescription) return;
+    while (rtcPendingIce.length > 0) {
+      var c = rtcPendingIce.shift();
+      try { rtcPc.addIceCandidate(c).catch(function () {}); } catch (_) {}
+    }
+  }
+
+  // ------------------------------------------------------------------ Transport Coordination
   function ensureTransports() {
     if (!bc && g.BroadcastChannel) {
       try {
@@ -240,19 +499,18 @@
     }
   }
 
-  function anyBrokerConnected() {
-    if (bc) {
-      for (var i = 0; i < clients.length; i++) {
-        if (clients[i].ready()) return true;
-      }
-    }
-    for (var j = 0; j < clients.length; j++) {
-      if (clients[j].ready()) return true;
+  function anyMqttConnected() {
+    for (var i = 0; i < clients.length; i++) {
+      if (clients[i].ready()) return true;
     }
     return false;
   }
 
-  function onAnyBrokerReady() {
+  function anyTransportConnected() {
+    return rtcReady || anyMqttConnected() || sseReady;
+  }
+
+  function onAnyTransportReady() {
     if (mode === 'room' && !connected) {
       if (role === 'host') {
         notifyStatus('waiting', 'Room ' + roomCode + ' ready! Waiting for friend to join...');
@@ -272,9 +530,10 @@
     for (var i = 0; i < clients.length; i++) {
       clients[i].subscribe(topic);
     }
+    openSseRelay(topic);
   }
 
-  function publishTopic(topic, obj) {
+  function publishSignaling(topic, obj) {
     obj.from = myId;
     obj.seq = ++txSeq;
     var jsonStr = JSON.stringify(obj);
@@ -283,6 +542,50 @@
     }
     for (var i = 0; i < clients.length; i++) {
       clients[i].publish(topic, jsonStr);
+    }
+    postSseRelay(topic, jsonStr);
+  }
+
+  function publishTopic(topic, obj) {
+    obj.from = myId;
+    obj.seq = ++txSeq;
+    var jsonStr = JSON.stringify(obj);
+    var t = obj.t;
+    var isHighFreq = (t === 'inp' || t === 'st' || t === 'pong');
+    var isKeepalive = (t === 'keepalive');
+
+    if (bc) {
+      try { bc.postMessage({ topic: topic, payload: jsonStr }); } catch (_) {}
+    }
+    if (rtcReady && rtcDc && rtcDc.readyState === 'open' && topic === activeTopic) {
+      try { rtcDc.send(jsonStr); } catch (_) {}
+    }
+    var mqttUp = anyMqttConnected();
+    if (mqttUp) {
+      for (var i = 0; i < clients.length; i++) {
+        clients[i].publish(topic, jsonStr);
+      }
+    }
+
+    // Use Same-Origin HTTPS Port-443 Relay for:
+    //  - ALL control/menu/handshake/signaling messages (instant & firewall-proof!)
+    //  - Gameplay fallback ONLY if BOTH WebRTC AND MQTT are blocked by the firewall
+    if (canUseSameOriginRelay) {
+      if (!isHighFreq && !isKeepalive) {
+        postSseRelay(topic, jsonStr);
+      } else if (!rtcReady && !mqttUp) {
+        var now = Date.now();
+        if (isKeepalive) {
+          if (now - lastHttpKeepaliveTx >= 2200) {
+            lastHttpKeepaliveTx = now;
+            postSseRelay(topic, jsonStr);
+          }
+        } else if (now - lastHttpDataTx >= 165) {
+          // ~6Hz fallback rate when ultra-strict firewall blocks both WebRTC & WSS
+          lastHttpDataTx = now;
+          postSseRelay(topic, jsonStr);
+        }
+      }
     }
   }
 
@@ -334,9 +637,9 @@
       if (!connected) {
         sendHandshakePulse();
       } else {
-        // Send keepalive & check if opponent timed out (12 seconds without any packet)
+        // Send keepalive & check if opponent timed out (15 seconds without any packet)
         publishTopic(activeTopic, { t: 'keepalive', to: peerId });
-        if (lastRxTime > 0 && Date.now() - lastRxTime > 12000) {
+        if (lastRxTime > 0 && Date.now() - lastRxTime > 15000) {
           var wasConn = connected;
           disconnect(true);
           notifyStatus('disconnected', 'Opponent disconnected.');
@@ -345,15 +648,15 @@
           }
         }
       }
-    }, 550);
+    }, 650);
   }
 
   function sendHandshakePulse() {
     if (!activeTopic || connected) return;
     if (mode === 'quick') {
-      publishTopic(TOPIC_LOBBY, { t: 'seek', ts: seekTs });
+      publishSignaling(TOPIC_LOBBY, { t: 'seek', ts: seekTs });
     } else if (mode === 'room') {
-      publishTopic(activeTopic, { t: 'hello', role: role, ts: seekTs, code: roomCode });
+      publishSignaling(activeTopic, { t: 'hello', role: role, ts: seekTs, code: roomCode });
     }
   }
 
@@ -371,15 +674,16 @@
     if (activeTopic !== roomTopic) {
       subscribeTopic(roomTopic);
     }
-    publishTopic(roomTopic, { t: 'ack_conn', to: peerId, role: role });
+    publishSignaling(roomTopic, { t: 'ack_conn', to: peerId, role: role });
+
+    // Upgrade to direct WebRTC DataChannel in the background (works on school Wi-Fi!)
+    setTimeout(startWebRTC, 150);
 
     notifyStatus('connected', 'Opponent connected!');
     if (handlers.onConnected) {
       handlers.onConnected({ role: role, roomCode: roomCode });
     }
   }
-
-  var pendingLeaderboardJson = null;
 
   function handleRawPacket(topic, msgStr) {
     if (topic === TOPIC_LEADERBOARD) {
@@ -395,7 +699,7 @@
     try { msg = JSON.parse(msgStr); } catch (_) { return; }
     if (!msg || !msg.from || msg.from === myId) return;
 
-    // Deduplicate across the parallel brokers using sender sequence numbers
+    // Deduplicate across parallel transports using sender sequence numbers
     if (typeof msg.seq === 'number') {
       var prevSeq = seenSeq[msg.from] || 0;
       if (msg.seq <= prevSeq) return;
@@ -414,7 +718,7 @@
         var iAmHost = (seekTs < msg.ts) || (seekTs === msg.ts && myId < msg.from);
         if (iAmHost) {
           var newCode = 'Q' + randomCode(3);
-          publishTopic(TOPIC_LOBBY, { t: 'pair', to: msg.from, code: newCode });
+          publishSignaling(TOPIC_LOBBY, { t: 'pair', to: msg.from, code: newCode });
           finalizeConnection('host', msg.from, newCode);
         }
       } else if (msg.t === 'pair' && msg.to === myId && msg.code) {
@@ -432,11 +736,10 @@
         else myHost = (seekTs < msg.ts) || (seekTs === msg.ts && myId < msg.from);
 
         if (myHost) {
-          publishTopic(activeTopic, { t: 'welcome', to: msg.from, code: roomCode });
+          publishSignaling(activeTopic, { t: 'welcome', to: msg.from, code: roomCode });
           finalizeConnection('host', msg.from, roomCode);
         } else {
-          // Reply with another hello so the host immediately sees us
-          publishTopic(activeTopic, { t: 'hello', role: 'guest', ts: seekTs, code: roomCode });
+          publishSignaling(activeTopic, { t: 'hello', role: 'guest', ts: seekTs, code: roomCode });
         }
       } else if (msg.t === 'welcome' && msg.to === myId) {
         finalizeConnection('guest', msg.from, roomCode);
@@ -450,6 +753,18 @@
     // 3. In-session messages between connected Host and Guest
     switch (msg.t) {
       case 'ack_conn':
+        break;
+
+      case 'rtc_offer':
+        if (msg.sdp) handleRtcOffer(msg.sdp);
+        break;
+
+      case 'rtc_answer':
+        if (msg.sdp) handleRtcAnswer(msg.sdp);
+        break;
+
+      case 'rtc_ice':
+        if (msg.cand) handleRtcIce(msg.cand);
         break;
 
       case 'leave':
@@ -517,7 +832,7 @@
 
   function disconnect(silent) {
     if (connected && activeTopic && peerId) {
-      try { publishTopic(activeTopic, { t: 'leave', to: peerId }); } catch (_) {}
+      try { publishSignaling(activeTopic, { t: 'leave', to: peerId }); } catch (_) {}
     }
     var wasConnected = connected;
     connected = false;
@@ -529,6 +844,8 @@
     pingMs = 0;
     lastRxTime = 0;
     clearHeartbeat();
+    closeWebRTC();
+    closeSseRelay();
     resetRemoteInput();
     if (!silent && wasConnected && handlers.onDisconnected) {
       handlers.onDisconnected('Connection closed.');
@@ -543,7 +860,7 @@
     roomCode = (customCode || randomCode(4)).toUpperCase().replace(/[^A-Z0-9]/g, '');
     subscribeTopic(TOPIC_ROOM_PREFIX + roomCode);
     startHeartbeat();
-    if (anyBrokerConnected()) {
+    if (anyTransportConnected()) {
       notifyStatus('waiting', 'Room ' + roomCode + ' ready! Share the code or invite link.');
       sendHandshakePulse();
     } else {
@@ -564,7 +881,7 @@
     roomCode = clean;
     subscribeTopic(TOPIC_ROOM_PREFIX + roomCode);
     startHeartbeat();
-    if (anyBrokerConnected()) {
+    if (anyTransportConnected()) {
       notifyStatus('connecting', 'Joining Room ' + roomCode + '...');
       sendHandshakePulse();
     } else {
@@ -580,7 +897,7 @@
     seekTs = Date.now();
     subscribeTopic(TOPIC_LOBBY);
     startHeartbeat();
-    if (anyBrokerConnected()) {
+    if (anyTransportConnected()) {
       notifyStatus('waiting', 'Searching for an online opponent...');
       sendHandshakePulse();
     } else {
